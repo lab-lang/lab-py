@@ -1,8 +1,8 @@
 """Where a plan's samples sit. Identity stays on the sample; this only adds a well."""
 
 from dataclasses import dataclass
-from decimal import Decimal
 
+from lab.labware import ContainerSpec
 from lab.protocols.materials import Sample
 from lab.protocols.plans import ProtocolPlan
 
@@ -17,17 +17,6 @@ class WellRef:
 class SamplePlacement:
     sample_id: str
     location: WellRef
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class ContainerSpec:
-    """Geometry and role of a container. A handler chooses the physical labware."""
-
-    id: str
-    rows: int
-    columns: int
-    capacity_ul: Decimal
-    kind: str
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

@@ -1,13 +1,18 @@
 """Abstract decks for this experiment.
 
-A deck names containers by id, geometry, kind, and site. The ids match the
-plates declared by the stage protocols. Compilation lowers the deck for an
-OT-2, a Flex, or a STAR.
+A deck places named containers using reusable labware specifications and typed sites.
+The ids match the plates declared by the stage protocols. Compilation lowers the
+deck for an OT-2, a Flex, or a STAR.
 """
 
-from decimal import Decimal
-
-from lab.deck import Container, Deck
+from lab.deck import Container, Deck, DeckSite
+from lab.labware import (
+    COLD_BLOCK_24,
+    CONICAL_RACK_15,
+    CULTURE_PLATE_96,
+    PCR_PLATE_96,
+    TUBE_RACK_24,
+)
 
 
 def assembly_deck() -> Deck:
@@ -16,19 +21,13 @@ def assembly_deck() -> Deck:
         containers=(
             Container(
                 id="reagents",
-                rows=4,
-                columns=6,
-                capacity_ul=Decimal(1500),
-                kind="cold_block",
-                site="temperature_module",
+                labware=COLD_BLOCK_24,
+                site=DeckSite.TEMPERATURE_MODULE,
             ),
             Container(
                 id="products",
-                rows=8,
-                columns=12,
-                capacity_ul=Decimal(100),
-                kind="pcr_plate",
-                site="thermocycler",
+                labware=PCR_PLATE_96,
+                site=DeckSite.THERMOCYCLER,
             ),
         )
     )
@@ -43,20 +42,14 @@ def transformation_deck(*, on_module: bool = False) -> Deck:
     dna = (
         Container(
             id="dna",
-            rows=4,
-            columns=6,
-            capacity_ul=Decimal(1500),
-            kind="cold_block",
-            site="temperature_module",
+            labware=COLD_BLOCK_24,
+            site=DeckSite.TEMPERATURE_MODULE,
         )
         if on_module
         else Container(
             id="dna",
-            rows=8,
-            columns=12,
-            capacity_ul=Decimal(100),
-            kind="pcr_plate",
-            site="plates",
+            labware=PCR_PLATE_96,
+            site=DeckSite.PLATES,
         )
     )
     return Deck(
@@ -64,19 +57,13 @@ def transformation_deck(*, on_module: bool = False) -> Deck:
             dna,
             Container(
                 id="tubes",
-                rows=4,
-                columns=6,
-                capacity_ul=Decimal(1500),
-                kind="tube_rack",
-                site="tube_rack",
+                labware=TUBE_RACK_24,
+                site=DeckSite.TUBE_RACK,
             ),
             Container(
                 id="products",
-                rows=8,
-                columns=12,
-                capacity_ul=Decimal(100),
-                kind="pcr_plate",
-                site="thermocycler",
+                labware=PCR_PLATE_96,
+                site=DeckSite.THERMOCYCLER,
             ),
         )
     )
@@ -87,57 +74,39 @@ def plating_deck(*, second_dilution: bool = False, second_agar: bool = False) ->
     containers = [
         Container(
             id="sources",
-            rows=8,
-            columns=12,
-            capacity_ul=Decimal(200),
-            kind="culture_plate",
-            site="thermocycler",
+            labware=CULTURE_PLATE_96,
+            site=DeckSite.THERMOCYCLER,
         ),
         Container(
             id="dilutions",
-            rows=8,
-            columns=12,
-            capacity_ul=Decimal(100),
-            kind="pcr_plate",
-            site="plates",
+            labware=PCR_PLATE_96,
+            site=DeckSite.PLATES,
         ),
         Container(
             id="agar",
-            rows=8,
-            columns=12,
-            capacity_ul=Decimal(100),
-            kind="pcr_plate",
-            site="more_plates",
+            labware=PCR_PLATE_96,
+            site=DeckSite.MORE_PLATES,
         ),
         Container(
             id="broth",
-            rows=3,
-            columns=5,
-            capacity_ul=Decimal(15000),
-            kind="conical_rack",
-            site="reservoir",
+            labware=CONICAL_RACK_15,
+            site=DeckSite.RESERVOIR,
         ),
     ]
     if second_dilution:
         containers.append(
             Container(
                 id="dilutions_2",
-                rows=8,
-                columns=12,
-                capacity_ul=Decimal(100),
-                kind="pcr_plate",
-                site="plates",
+                labware=PCR_PLATE_96,
+                site=DeckSite.PLATES,
             )
         )
     if second_agar:
         containers.append(
             Container(
                 id="agar_2",
-                rows=8,
-                columns=12,
-                capacity_ul=Decimal(100),
-                kind="pcr_plate",
-                site="more_plates",
+                labware=PCR_PLATE_96,
+                site=DeckSite.MORE_PLATES,
             )
         )
     return Deck(containers=tuple(containers))

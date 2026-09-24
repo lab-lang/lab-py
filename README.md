@@ -50,6 +50,23 @@ compiled.write("build/transformation")
 
 `transformation_deck(on_module=True)` names the 24-well DNA block, the cell tubes, and the reaction plate. Compilation lowers that deck for the handler you pass. This recipe's 2 µL transfers lower for `LiquidHandler.OT2` and `LiquidHandler.STAR`. A concrete deck for one handler cannot be compiled as another. For a document with no robot, import `Manual` from `lab.targets` and use `ProtocolCompiler().compile(request, hardware=Manual())`.
 
+## Describe a deck
+
+`LabwareSpec` defines a labware kind, geometry, and logical capacity per well. `ContainerSpec` gives that specification a protocol id; `Container` adds a `DeckSite` placement. Allocation and deck construction share the same immutable specifications.
+
+```python
+from lab.deck import Container, Deck, DeckSite
+from lab.labware import PCR_PLATE_96
+
+deck = Deck(
+    containers=(
+        Container(id="samples", labware=PCR_PLATE_96, site=DeckSite.PLATES),
+    )
+)
+```
+
+Use `LabwareKind` and `DeckSite` members when defining custom labware and placements. Construction rejects raw kind/site strings, incompatible placements, invalid geometry or capacity, duplicate container ids, and multiple containers on a single thermal module. Physical labware names and slot assignments belong to each robot backend.
+
 ## Try it
 
 Python 3.12. Robot SDKs are optional.

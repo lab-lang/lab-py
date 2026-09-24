@@ -25,10 +25,17 @@ from lab.experiments.cloning.stages.transformation import (
     build_transformation,
     layout_transformation,
 )
+from lab.labware import (
+    COLD_BLOCK_24,
+    CONICAL_RACK_15,
+    CULTURE_PLATE_96,
+    PCR_PLATE_96,
+    TUBE_RACK_24,
+    ContainerSpec,
+)
 from lab.protocol import Protocol
 from lab.protocols.allocation import (
     AllocatedProtocolPlan,
-    ContainerSpec,
     OutputManifest,
     SamplePlacement,
     WellRef,
@@ -298,17 +305,11 @@ def _assembly_plan(
         containers=(
             ContainerSpec(
                 id="reagents",
-                rows=4,
-                columns=6,
-                capacity_ul=Decimal(1500),
-                kind="cold_block",
+                labware=COLD_BLOCK_24,
             ),
             ContainerSpec(
                 id="products",
-                rows=8,
-                columns=12,
-                capacity_ul=Decimal(100),
-                kind="pcr_plate",
+                labware=PCR_PLATE_96,
             ),
         ),
         placements=tuple(placements),
@@ -457,10 +458,6 @@ def _transformation_plan(
         output_sample_ids=tuple(sample.id for sample, _dest in reactions),
         steps=tuple(steps),
     )
-    if layout.chill_dna:
-        dna_rows, dna_columns, dna_capacity = 4, 6, Decimal(1500)
-    else:
-        dna_rows, dna_columns, dna_capacity = 8, 12, Decimal(100)
     placements = [
         *(
             SamplePlacement(
@@ -501,24 +498,15 @@ def _transformation_plan(
         containers=(
             ContainerSpec(
                 id="dna",
-                rows=dna_rows,
-                columns=dna_columns,
-                capacity_ul=dna_capacity,
-                kind="cold_block" if layout.chill_dna else "pcr_plate",
+                labware=COLD_BLOCK_24 if layout.chill_dna else PCR_PLATE_96,
             ),
             ContainerSpec(
                 id="tubes",
-                rows=4,
-                columns=6,
-                capacity_ul=Decimal(1500),
-                kind="tube_rack",
+                labware=TUBE_RACK_24,
             ),
             ContainerSpec(
                 id="products",
-                rows=8,
-                columns=12,
-                capacity_ul=Decimal(100),
-                kind="pcr_plate",
+                labware=PCR_PLATE_96,
             ),
         ),
         placements=tuple(unique[sample.id] for sample in samples),
@@ -682,31 +670,19 @@ def _plating_plan(
     containers = [
         ContainerSpec(
             id="sources",
-            rows=8,
-            columns=12,
-            capacity_ul=Decimal(200),
-            kind="culture_plate",
+            labware=CULTURE_PLATE_96,
         ),
         ContainerSpec(
             id="dilutions",
-            rows=8,
-            columns=12,
-            capacity_ul=Decimal(100),
-            kind="pcr_plate",
+            labware=PCR_PLATE_96,
         ),
         ContainerSpec(
             id="agar",
-            rows=8,
-            columns=12,
-            capacity_ul=Decimal(100),
-            kind="pcr_plate",
+            labware=PCR_PLATE_96,
         ),
         ContainerSpec(
             id="broth",
-            rows=3,
-            columns=5,
-            capacity_ul=Decimal(15000),
-            kind="conical_rack",
+            labware=CONICAL_RACK_15,
         ),
     ]
     if split:
@@ -714,17 +690,11 @@ def _plating_plan(
             (
                 ContainerSpec(
                     id="dilutions_2",
-                    rows=8,
-                    columns=12,
-                    capacity_ul=Decimal(100),
-                    kind="pcr_plate",
+                    labware=PCR_PLATE_96,
                 ),
                 ContainerSpec(
                     id="agar_2",
-                    rows=8,
-                    columns=12,
-                    capacity_ul=Decimal(100),
-                    kind="pcr_plate",
+                    labware=PCR_PLATE_96,
                 ),
             )
         )

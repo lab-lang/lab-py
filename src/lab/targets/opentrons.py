@@ -6,8 +6,9 @@ from decimal import Decimal
 from importlib.metadata import version
 from typing import Any, Literal
 
-from lab.deck import Deck
+from lab.deck import Deck, DeckSite
 from lab.documents import describe
+from lab.labware import LabwareKind
 from lab.model import (
     Binding,
     Distribute,
@@ -387,30 +388,30 @@ class Opentrons:
 
 
 # Open-deck sites fill in this order. Tip racks use whatever remains.
-_SITES: dict[str, dict[str, tuple[str, ...]]] = {
+_SITE_SLOTS: dict[str, dict[DeckSite, tuple[str, ...]]] = {
     "OT-2": {
-        "temperature_module": ("1",),
-        "thermocycler": ("thermocycler",),
-        "plates": ("2", "3"),
-        "more_plates": ("5", "6"),
-        "tube_rack": ("3",),
-        "reservoir": ("4",),
+        DeckSite.TEMPERATURE_MODULE: ("1",),
+        DeckSite.THERMOCYCLER: ("thermocycler",),
+        DeckSite.PLATES: ("2", "3"),
+        DeckSite.MORE_PLATES: ("5", "6"),
+        DeckSite.TUBE_RACK: ("3",),
+        DeckSite.RESERVOIR: ("4",),
     },
     "Flex": {
-        "temperature_module": ("C1",),
-        "thermocycler": ("thermocycler",),
-        "plates": ("C1", "B2"),
-        "more_plates": ("C2", "B3"),
-        "tube_rack": ("C2",),
-        "reservoir": ("D2",),
+        DeckSite.TEMPERATURE_MODULE: ("C1",),
+        DeckSite.THERMOCYCLER: ("thermocycler",),
+        DeckSite.PLATES: ("C1", "B2"),
+        DeckSite.MORE_PLATES: ("C2", "B3"),
+        DeckSite.TUBE_RACK: ("C2",),
+        DeckSite.RESERVOIR: ("D2",),
     },
 }
-_LOAD_NAMES = {
-    "cold_block": "opentrons_24_aluminumblock_nest_1.5ml_snapcap",
-    "pcr_plate": "nest_96_wellplate_100ul_pcr_full_skirt",
-    "tube_rack": "opentrons_24_tuberack_eppendorf_1.5ml_safelock_snapcap",
-    "conical_rack": "opentrons_15_tuberack_falcon_15ml_conical",
-    "culture_plate": "biorad_96_wellplate_200ul_pcr",
+_LOAD_NAMES: dict[LabwareKind, str] = {
+    LabwareKind.COLD_BLOCK: "opentrons_24_aluminumblock_nest_1.5ml_snapcap",
+    LabwareKind.PCR_PLATE: "nest_96_wellplate_100ul_pcr_full_skirt",
+    LabwareKind.TUBE_RACK: "opentrons_24_tuberack_eppendorf_1.5ml_safelock_snapcap",
+    LabwareKind.CONICAL_RACK: "opentrons_15_tuberack_falcon_15ml_conical",
+    LabwareKind.CULTURE_PLATE: "biorad_96_wellplate_200ul_pcr",
 }
 _P20_TIP_SLOTS = ("2", "9", "3", "4", "5", "6")
 
@@ -421,7 +422,7 @@ def lower_deck(
     """Bind a deck to OT-2 or Flex labware, modules, and single-channel pipettes."""
     labware, taken = _bind_containers(deck, robot)
     thermocycler: Literal["thermocycler module", "thermocycler module gen2"] | None = None
-    if any(container.site == "thermocycler" for container in deck.containers):
+    if any(container.site == DeckSite.THERMOCYCLER for container in deck.containers):
         thermocycler = "thermocycler module" if robot == "OT-2" else "thermocycler module gen2"
     if robot == "Flex":
         if "D1" in taken:
@@ -471,24 +472,24 @@ def lower_deck(
 def _bind_containers(
     deck: Deck, robot: Literal["OT-2", "Flex"]
 ) -> tuple[dict[str, Labware], set[str]]:
-    counts: dict[str, int] = {}
+    counts: dict[DeckSite, int] = {}
     taken: set[str] = set()
     labware: dict[str, Labware] = {}
     for container in deck.containers:
-        pool = _SITES[robot][container.site]
+        pool = _SITE_SLOTS[robot][container.site]
         index = counts.get(container.site, 0)
         if index >= len(pool):
-            raise CompileError(f"No more {robot} sites for {container.site}")
+            raise CompileError(f"No more {robot} sites for {container.site.value}")
         slot = pool[index]
         counts[container.site] = index + 1
         if slot in taken:
             raise CompileError(f"{robot} slot {slot} is already in use")
         taken.add(slot)
         module: Literal["temperature module", "temperature module gen2"] | None = None
-        if container.site == "temperature_module":
+        if container.site == DeckSite.TEMPERATURE_MODULE:
             module = "temperature module" if robot == "OT-2" else "temperature module gen2"
-        load_name = _LOAD_NAMES[container.kind]
-        if robot == "Flex" and container.site == "thermocycler":
+        load_name = _LOAD_NAMES[container.labware.kind]
+        if robot == "Flex" and container.site == DeckSite.THERMOCYCLER:
             load_name = "opentrons_96_wellplate_200ul_pcr_full_skirt"
         labware[container.id] = Labware(load_name, slot, module=module)
     return labware, taken

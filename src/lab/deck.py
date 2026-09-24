@@ -1,65 +1,49 @@
 """A handler-neutral deck. A backend assigns slots, carriers, and labware."""
 
 from dataclasses import dataclass
-from decimal import Decimal
-from typing import Literal
+from enum import Enum
 
-Kind = Literal["cold_block", "pcr_plate", "tube_rack", "conical_rack", "culture_plate"]
-Site = Literal[
-    "temperature_module",
-    "thermocycler",
-    "plates",
-    "more_plates",
-    "tube_rack",
-    "reservoir",
-]
+from lab.labware import ContainerSpec, LabwareKind
 
-_KINDS = frozenset({"cold_block", "pcr_plate", "tube_rack", "conical_rack", "culture_plate"})
-_SITES = frozenset(
-    {"temperature_module", "thermocycler", "plates", "more_plates", "tube_rack", "reservoir"}
-)
-_PAIRS = frozenset(
-    {
-        ("cold_block", "temperature_module"),
-        ("pcr_plate", "thermocycler"),
-        ("culture_plate", "thermocycler"),
-        ("pcr_plate", "plates"),
-        ("pcr_plate", "more_plates"),
-        ("tube_rack", "tube_rack"),
-        ("conical_rack", "reservoir"),
-    }
-)
+
+class DeckSite(Enum):
+    """Logical placement groups. Each backend owns their physical positions."""
+
+    TEMPERATURE_MODULE = "temperature_module"
+    THERMOCYCLER = "thermocycler"
+    PLATES = "plates"
+    MORE_PLATES = "more_plates"
+    TUBE_RACK = "tube_rack"
+    RESERVOIR = "reservoir"
+
+
+_COMPATIBLE_KINDS = {
+    DeckSite.TEMPERATURE_MODULE: frozenset({LabwareKind.COLD_BLOCK}),
+    DeckSite.THERMOCYCLER: frozenset({LabwareKind.PCR_PLATE, LabwareKind.CULTURE_PLATE}),
+    DeckSite.PLATES: frozenset({LabwareKind.PCR_PLATE}),
+    DeckSite.MORE_PLATES: frozenset({LabwareKind.PCR_PLATE}),
+    DeckSite.TUBE_RACK: frozenset({LabwareKind.TUBE_RACK}),
+    DeckSite.RESERVOIR: frozenset({LabwareKind.CONICAL_RACK}),
+}
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class Container:
-    """One container's geometry, kind, and site.
+class Container(ContainerSpec):
+    """A named container placed at a typed logical site.
 
-    ``plates`` and ``more_plates`` are the two open-deck plate runs. ``tube_rack``
-    and ``reservoir`` are the holder and the large-volume rack. A temperature
-    module and a thermocycler each hold one container.
+    ``DeckSite.PLATES`` and ``DeckSite.MORE_PLATES`` are the two open-deck plate
+    runs. ``DeckSite.TUBE_RACK`` and ``DeckSite.RESERVOIR`` are the holder and the
+    large-volume rack. A temperature module and a thermocycler each hold one container.
     """
 
-    id: str
-    rows: int
-    columns: int
-    capacity_ul: Decimal
-    kind: Kind
-    site: Site
+    site: DeckSite
 
     def __post_init__(self) -> None:
-        if not isinstance(self.id, str) or not self.id.strip():
-            raise ValueError("Container id must be nonempty text.")
-        if self.kind not in _KINDS or self.site not in _SITES:
-            raise ValueError("Unknown container kind or site.")
-        if (self.kind, self.site) not in _PAIRS:
-            raise ValueError(f"A {self.kind} cannot sit on {self.site}.")
-        if type(self.rows) is not int or type(self.columns) is not int:
-            raise ValueError("Rows and columns must be positive integers.")
-        if self.rows < 1 or self.columns < 1 or self.rows > 26:
-            raise ValueError("Rows and columns must be positive integers.")
-        if type(self.capacity_ul) is not Decimal or self.capacity_ul <= 0:
-            raise ValueError("Capacity must be a positive number of microliters.")
+        ContainerSpec.__post_init__(self)
+        if not isinstance(self.site, DeckSite):
+            raise TypeError("Container site must be a DeckSite member.")
+        if self.labware.kind not in _COMPATIBLE_KINDS[self.site]:
+            raise ValueError(f"A {self.labware.kind.value} cannot sit on {self.site.value}.")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -69,12 +53,16 @@ class Deck:
     containers: tuple[Container, ...]
 
     def __post_init__(self) -> None:
+        if not isinstance(self.containers, tuple) or any(
+            not isinstance(container, Container) for container in self.containers
+        ):
+            raise TypeError("Deck containers must be a tuple of placed Container objects.")
         if not self.containers:
             raise ValueError("A deck needs at least one container.")
         ids = [container.id for container in self.containers]
         if len(ids) != len(set(ids)):
             raise ValueError("Deck container ids must be unique.")
-        for site in ("temperature_module", "thermocycler"):
+        for site in (DeckSite.TEMPERATURE_MODULE, DeckSite.THERMOCYCLER):
             count = sum(container.site == site for container in self.containers)
             if count > 1:
-                raise ValueError(f"A deck has one {site.replace('_', ' ')}.")
+                raise ValueError(f"A deck has one {site.value.replace('_', ' ')}.")

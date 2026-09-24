@@ -9,6 +9,7 @@ from typing import Any
 from lab.deck import Container as DeckContainer
 from lab.deck import Deck
 from lab.documents import describe
+from lab.labware import LabwareKind
 from lab.model import (
     Binding,
     Distribute,
@@ -341,16 +342,16 @@ def lower_deck(deck: Deck, *, volumes: tuple[Decimal, ...]) -> STAR:
 
 def _star_plate(container: DeckContainer) -> Any:
     name = f"{container.id}_plate"
-    if container.kind in {"cold_block", "tube_rack"}:
-        if container.rows > 4 or container.columns > 6:
+    if container.labware.kind in {LabwareKind.COLD_BLOCK, LabwareKind.TUBE_RACK}:
+        if container.labware.rows > 4 or container.labware.columns > 6:
             raise CompileError(f"{container.id} does not fit a 24-well plate")
         return CellTreat_24_wellplate_3300ul_Fb(name=name)
-    if container.kind in {"pcr_plate", "culture_plate"}:
-        if container.rows > 8 or container.columns > 12:
+    if container.labware.kind in {LabwareKind.PCR_PLATE, LabwareKind.CULTURE_PLATE}:
+        if container.labware.rows > 8 or container.labware.columns > 12:
             raise CompileError(f"{container.id} does not fit a 96-well plate")
         return Azenta4titudeFrameStar_96_wellplate_200ul_Vb(name=name)
-    if container.kind == "conical_rack":
-        if container.rows > 4 or container.columns > 6:
+    if container.labware.kind == LabwareKind.CONICAL_RACK:
+        if container.labware.rows > 4 or container.labware.columns > 6:
             raise CompileError(f"{container.id} does not fit a 24-well reservoir")
         return Cor_Axy_24_wellplate_10mL_Vb(name=name)
-    raise CompileError(f"No STAR labware for {container.kind}")
+    raise CompileError(f"No STAR labware for {container.labware.kind.value}")
