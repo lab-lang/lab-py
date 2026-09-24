@@ -1,0 +1,16 @@
+{
+  "bacterium_locations": {
+    "A1": [
+      "composite_strain_1",
+      "Competent_Cell_DH5alpha",
+      "composite_plasmid_1",
+      "Media_1"
+    ],
+    "B1": [
+      "composite_strain_1",
+      "Competent_Cell_DH5alpha",
+      "composite_plasmid_1",
+      "Media_1"
+    ]
+  }
+}
