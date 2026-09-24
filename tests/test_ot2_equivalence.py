@@ -19,7 +19,7 @@ from lab.experiments.cloning import (
     plating_deck,
     transformation_deck,
 )
-from lab.targets import Handler
+from lab.targets import LiquidHandler
 
 try:
     from opentrons.simulate import simulate
@@ -118,7 +118,7 @@ def _protocol(body: str) -> str:
 
 
 def _lab_source(protocol, deck) -> str:
-    return lab.compile(protocol, deck, handler=Handler.OT2).files["protocol.py"]
+    return lab.compile(protocol, deck, liquid_handler=LiquidHandler.OT2).files["protocol.py"]
 
 
 @pytest.mark.integration

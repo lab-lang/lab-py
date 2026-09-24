@@ -21,7 +21,7 @@ from lab.model import (
     Transfer,
     Wait,
 )
-from lab.targets.handler import Handler
+from lab.targets.liquid_handler import LiquidHandler
 from lab.units import number
 from lab.validation import CompileError, step_error, volume_trace
 
@@ -69,10 +69,10 @@ class Opentrons:
     small_tip_racks: tuple[Labware, ...] = ()
 
     @property
-    def handler(self) -> Handler:
+    def liquid_handler(self) -> LiquidHandler:
         if self.robot == "Flex":
-            return Handler.FLEX
-        return Handler.OT2
+            return LiquidHandler.FLEX
+        return LiquidHandler.OT2
 
     def prepare(self, protocol: RecordedProtocol) -> TargetPlan:
         if _sdk_import_error is not None:

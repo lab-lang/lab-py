@@ -3,7 +3,7 @@
 from enum import Enum
 
 
-class Handler(Enum):
+class LiquidHandler(Enum):
     """A liquid handler. Callers pass a member; there is no default device."""
 
     OT2 = "ot2"

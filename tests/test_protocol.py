@@ -20,13 +20,13 @@ def simple():
     return p, a, b
 
 
-def test_compile_requires_hardware_and_a_matching_handler():
+def test_compile_requires_hardware_and_a_matching_liquid_handler():
     p, a, b = simple()
     p.transfer(a, b, volume=1 * uL)
     with pytest.raises(TypeError):
         lab.compile(p)
     with pytest.raises(TypeError):
-        lab.compile(p, Manual(), handler="ot2")
+        lab.compile(p, Manual(), liquid_handler="ot2")
 
 
 def test_normal_python_composition_and_exact_quantities():

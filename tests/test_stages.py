@@ -28,7 +28,7 @@ from lab.protocols import (
     TransformationReaction,
     TransformationRequest,
 )
-from lab.targets import Handler, Labware, Manual
+from lab.targets import Labware, LiquidHandler, Manual
 from lab.targets.lower import lower_deck
 
 
@@ -143,23 +143,23 @@ def test_chained_plan_requires_both_design_inputs(designs):
         golden_gate(**designs)
 
 
-def test_compiling_a_deck_requires_a_handler():
+def test_compiling_a_deck_requires_a_liquid_handler():
     protocol = golden_gate(ASSEMBLIES, STRAINS)
     with pytest.raises(TypeError):
         lab.compile(protocol, assembly_deck())
     with pytest.raises(TypeError):
-        lab.compile(protocol, assembly_deck(), handler="ot2")  # type: ignore[arg-type]
+        lab.compile(protocol, assembly_deck(), liquid_handler="ot2")  # type: ignore[arg-type]
 
 
-def test_cloning_decks_lower_to_the_same_containers_for_every_handler():
-    for handler in Handler:
-        assert set(lower_deck(assembly_deck(), handler).labware) == {"reagents", "products"}
-        assert set(lower_deck(transformation_deck(), handler).labware) == {
+def test_cloning_decks_lower_to_the_same_containers_for_every_liquid_handler():
+    for liquid_handler in LiquidHandler:
+        assert set(lower_deck(assembly_deck(), liquid_handler).labware) == {"reagents", "products"}
+        assert set(lower_deck(transformation_deck(), liquid_handler).labware) == {
             "dna",
             "tubes",
             "products",
         }
-        assert set(lower_deck(plating_deck(), handler).labware) == {
+        assert set(lower_deck(plating_deck(), liquid_handler).labware) == {
             "sources",
             "dilutions",
             "agar",
@@ -170,7 +170,7 @@ def test_cloning_decks_lower_to_the_same_containers_for_every_handler():
 
 
 def test_ot2_lowering_uses_the_cloning_slots():
-    assembly = lower_deck(assembly_deck(), Handler.OT2, (Decimal(2), Decimal(20)))
+    assembly = lower_deck(assembly_deck(), LiquidHandler.OT2, (Decimal(2), Decimal(20)))
     assert assembly.labware["reagents"] == Labware(
         "opentrons_24_aluminumblock_nest_1.5ml_snapcap",
         "1",
@@ -181,7 +181,7 @@ def test_ot2_lowering_uses_the_cloning_slots():
     assert assembly.pipette == "p20_single_gen2"
     assert assembly.tip_racks[0].slot == "2"
 
-    shock = lower_deck(transformation_deck(), Handler.OT2, (Decimal(2), Decimal(60)))
+    shock = lower_deck(transformation_deck(), LiquidHandler.OT2, (Decimal(2), Decimal(60)))
     assert shock.labware["dna"].slot == "2"
     assert shock.labware["tubes"].slot == "3"
     assert shock.pipette == "p300_single_gen2"
@@ -191,14 +191,14 @@ def test_ot2_lowering_uses_the_cloning_slots():
     assert shock.small_tip_racks[0].slot == "9"
 
     chilled = lower_deck(
-        transformation_deck(on_module=True), Handler.OT2, (Decimal(2), Decimal(60))
+        transformation_deck(on_module=True), LiquidHandler.OT2, (Decimal(2), Decimal(60))
     )
     assert chilled.labware["dna"].slot == "1"
     assert chilled.labware["dna"].module == "temperature module"
 
     plating = lower_deck(
         plating_deck(second_dilution=True, second_agar=True),
-        Handler.OT2,
+        LiquidHandler.OT2,
         (Decimal(2),),
     )
     assert {name: item.slot for name, item in plating.labware.items()} == {
@@ -218,7 +218,7 @@ def test_assembly_compiles_on_a_hamilton_star():
     compiled = ProtocolCompiler().compile(
         example_assembly_request(),
         hardware=assembly_deck(),
-        handler=Handler.STAR,
+        liquid_handler=LiquidHandler.STAR,
     )
     source = compiled.files["protocol.py"]
     assert "LiquidHandler" in source

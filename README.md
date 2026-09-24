@@ -11,7 +11,7 @@
 
 Lab Compiler is the Python compiler for laboratory work. A program names materials, wells, and steps. Compilation checks volumes, units, and bindings, then writes a printable document and code for the handler you name.
 
-The same plan renders for an Opentrons OT-2, an Opentrons Flex, or a Hamilton STAR. You describe the deck by container and site. Compilation lowers it to that handler's pipettes, modules, carriers, and labware. `Handler.OT2`, `Handler.FLEX`, and `Handler.STAR` are peers. A concrete deck for one of them cannot be compiled as another.
+The same plan renders for an Opentrons OT-2, an Opentrons Flex, or a Hamilton STAR. You describe the deck by container and site. Compilation lowers it to that handler's pipettes, modules, carriers, and labware. `LiquidHandler.OT2`, `LiquidHandler.FLEX`, and `LiquidHandler.STAR` are peers. A concrete deck for one of them cannot be compiled as another.
 
 ## Write a protocol
 
@@ -25,7 +25,7 @@ from lab.protocols import (
     TransformationReaction,
     TransformationRequest,
 )
-from lab.targets import Handler
+from lab.targets import LiquidHandler
 
 request = TransformationRequest(
     id="my-transformation",
@@ -41,14 +41,14 @@ request = TransformationRequest(
 compiled = ProtocolCompiler().compile(
     request,
     hardware=transformation_deck(on_module=True),
-    handler=Handler.STAR,
+    liquid_handler=LiquidHandler.STAR,
 )
 compiled.write("build/transformation")
 ```
 
 `MaterialRef` carries your material's identity and display label. `TransformationReaction` associates an output strain with its chassis and plasmids. The compiler assigns wells and records the transfers, heat shock, and recovery steps. The result includes an output manifest for downstream stages. Sample designs live in [examples/cloning.py](examples/cloning.py); the [staged example](examples/stages.py) links assembly, transformation, and plating.
 
-`transformation_deck(on_module=True)` names the 24-well DNA block, the cell tubes, and the reaction plate. Compilation lowers that deck for the handler you pass. This recipe's 2 µL transfers lower for `Handler.OT2` and `Handler.STAR`. A concrete deck for one handler cannot be compiled as another. For a document with no robot, import `Manual` from `lab.targets` and use `ProtocolCompiler().compile(request, hardware=Manual())`.
+`transformation_deck(on_module=True)` names the 24-well DNA block, the cell tubes, and the reaction plate. Compilation lowers that deck for the handler you pass. This recipe's 2 µL transfers lower for `LiquidHandler.OT2` and `LiquidHandler.STAR`. A concrete deck for one handler cannot be compiled as another. For a document with no robot, import `Manual` from `lab.targets` and use `ProtocolCompiler().compile(request, hardware=Manual())`.
 
 ## Try it
 

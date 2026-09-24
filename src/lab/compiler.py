@@ -13,7 +13,7 @@ from lab._version import __version__
 from lab.deck import Deck
 from lab.model import Distribute, Location, Mix, RecordedProtocol, TargetPlan, Transfer, encode
 from lab.protocol import Protocol
-from lab.targets.handler import Handler
+from lab.targets.liquid_handler import LiquidHandler
 from lab.targets.lower import lower_deck
 from lab.validation import logical_bindings, validate
 
@@ -84,30 +84,33 @@ class Compilation:
 
 
 def compile(
-    protocol: Protocol, hardware: Target | Deck, *, handler: Handler | None = None
+    protocol: Protocol, hardware: Target | Deck, *, liquid_handler: LiquidHandler | None = None
 ) -> Compilation:
     """Compile offline for one piece of hardware.
 
-    A ``Deck`` is lowered for ``handler`` into that robot's labware, modules, and
-    pipettes. Robot hardware names its ``Handler``; pass that same member.
-    A document target such as ``Manual()`` has no robot, so ``handler`` is omitted.
+    A ``Deck`` is lowered for ``liquid_handler`` into that robot's labware, modules, and
+    pipettes. Robot hardware names its ``LiquidHandler``; pass that same member.
+    A document target such as ``Manual()`` has no robot, so ``liquid_handler`` is omitted.
     """
     if isinstance(hardware, Deck):
-        if not isinstance(handler, Handler):
-            raise TypeError("Pass handler=Handler.OT2, Handler.FLEX, or Handler.STAR.")
+        if not isinstance(liquid_handler, LiquidHandler):
+            raise TypeError(
+                "Pass liquid_handler=LiquidHandler.OT2, LiquidHandler.FLEX, or LiquidHandler.STAR."
+            )
         liquid = tuple(
             step.volume for step in protocol.steps if isinstance(step, (Transfer, Mix, Distribute))
         )
-        hardware = lower_deck(hardware, handler, liquid)
-    declared = getattr(hardware, "handler", None)
-    if isinstance(declared, Handler) and handler != declared:
+        hardware = lower_deck(hardware, liquid_handler, liquid)
+    declared = getattr(hardware, "liquid_handler", None)
+    if isinstance(declared, LiquidHandler) and liquid_handler != declared:
         raise TypeError(
-            f"This hardware is Handler.{declared.name}. Pass handler=Handler.{declared.name}."
+            f"This hardware is LiquidHandler.{declared.name}. "
+            f"Pass liquid_handler=LiquidHandler.{declared.name}."
         )
-    if handler is not None and not isinstance(declared, Handler):
-        raise TypeError("This hardware does not name a Handler.")
-    if handler is not None and not isinstance(handler, Handler):
-        raise TypeError("Pass Handler.OT2, Handler.FLEX, or Handler.STAR.")
+    if liquid_handler is not None and not isinstance(declared, LiquidHandler):
+        raise TypeError("This hardware does not name a LiquidHandler.")
+    if liquid_handler is not None and not isinstance(liquid_handler, LiquidHandler):
+        raise TypeError("Pass LiquidHandler.OT2, LiquidHandler.FLEX, or LiquidHandler.STAR.")
     recorded = protocol.snapshot()
     validate(recorded, logical_bindings(recorded))
     prepared = hardware.prepare(recorded)

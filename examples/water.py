@@ -5,7 +5,7 @@ import argparse
 import lab
 from lab import Protocol, seconds, uL
 from lab.compiler import Target
-from lab.targets import STAR, Handler, Labware, Manual, Opentrons
+from lab.targets import STAR, Labware, LiquidHandler, Manual, Opentrons
 
 _star_import_error: ImportError | None = None
 try:
@@ -100,8 +100,8 @@ def main() -> None:
     parser.add_argument("--out", default=None)
     args = parser.parse_args()
     hardware = target(args.target)
-    handler = None if args.target == "manual" else Handler(args.target)
-    bundle = lab.compile(water_aliquots(), hardware, handler=handler)
+    liquid_handler = None if args.target == "manual" else LiquidHandler(args.target)
+    bundle = lab.compile(water_aliquots(), hardware, liquid_handler=liquid_handler)
     path = bundle.write(args.out or f"build/{args.target}")
     print(f"{bundle.target.name}: {path} ({bundle.digest[:12]})")
 

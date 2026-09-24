@@ -16,14 +16,14 @@ from lab.experiments.cloning import (
     transformation_deck,
 )
 from lab.protocols import PlatingRequest, ProtocolCompiler
-from lab.targets import Handler, Manual
+from lab.targets import LiquidHandler, Manual
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--target",
-        choices=("manual", *(handler.value for handler in Handler)),
+        choices=("manual", *(liquid_handler.value for liquid_handler in LiquidHandler)),
         default="manual",
     )
     parser.add_argument("--out", default=None)
@@ -33,16 +33,16 @@ def main() -> None:
         path = bundle.write(args.out or "build/stages/manual")
         print(f"{bundle.target.name}: {path} ({bundle.digest[:12]})")
         return
-    handler = Handler(args.target)
+    liquid_handler = LiquidHandler(args.target)
     compiler = ProtocolCompiler()
     assembled = compiler.compile(
-        example_assembly_request(), hardware=assembly_deck(), handler=handler
+        example_assembly_request(), hardware=assembly_deck(), liquid_handler=liquid_handler
     )
     transformed = compiler.compile(
         example_transformation_request(),
         inputs=assembled.manifest,
         hardware=transformation_deck(),
-        handler=handler,
+        liquid_handler=liquid_handler,
     )
     plated = compiler.compile(
         PlatingRequest(
@@ -52,14 +52,14 @@ def main() -> None:
         ),
         inputs=transformed.manifest,
         hardware=plating_deck(),
-        handler=handler,
+        liquid_handler=liquid_handler,
     )
     for name, compiled in (
         ("assembly", assembled),
         ("transformation", transformed),
         ("plating", plated),
     ):
-        path = compiled.write(args.out or f"build/stages/{handler.value}/{name}")
+        path = compiled.write(args.out or f"build/stages/{liquid_handler.value}/{name}")
         print(f"{name}: {path}")
 
 

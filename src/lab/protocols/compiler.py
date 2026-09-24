@@ -52,7 +52,7 @@ from lab.protocols.steps import (
     Step,
     Transfer,
 )
-from lab.targets.handler import Handler
+from lab.targets.liquid_handler import LiquidHandler
 
 
 class _Ids:
@@ -107,11 +107,11 @@ class ProtocolCompiler:
         *,
         inputs: OutputManifest | None = None,
         hardware: Target | Deck,
-        handler: Handler | None = None,
+        liquid_handler: LiquidHandler | None = None,
     ) -> CompiledProtocol:
         """Allocate the plan and render it for this hardware."""
         plan, allocated, protocol = self._prepare(request, inputs=inputs)
-        files = dict(compile_protocol(protocol, hardware, handler=handler).files)
+        files = dict(compile_protocol(protocol, hardware, liquid_handler=liquid_handler).files)
         return CompiledProtocol(
             plan=plan,
             allocation=allocated,

@@ -23,7 +23,7 @@ from lab.model import (
     Wait,
     encode,
 )
-from lab.targets.handler import Handler
+from lab.targets.liquid_handler import LiquidHandler
 from lab.units import magnitude, number, uL
 from lab.validation import CompileError, step_error
 
@@ -60,8 +60,8 @@ class STAR:
     channel: int = 0
 
     @property
-    def handler(self) -> Handler:
-        return Handler.STAR
+    def liquid_handler(self) -> LiquidHandler:
+        return LiquidHandler.STAR
 
     def prepare(self, protocol: RecordedProtocol) -> TargetPlan:
         if _sdk_import_error is not None:

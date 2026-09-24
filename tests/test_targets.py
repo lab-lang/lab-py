@@ -10,7 +10,7 @@ import pytest
 import lab
 from examples.water import target, water_aliquots
 from lab import CompileError, Protocol, celsius, seconds, uL
-from lab.targets import Handler, Labware, Manual
+from lab.targets import Labware, LiquidHandler, Manual
 from tests.thermal_fixture import thermal_aliquots
 
 try:
@@ -35,11 +35,10 @@ requires_star = pytest.mark.skipif(not _has_star, reason="PyLabRobot SDK not ins
 
 
 def compiled(protocol, hardware):
-    declared = getattr(hardware, "handler", None)
-    if isinstance(declared, Handler):
-        return lab.compile(protocol, hardware, handler=declared)
+    declared = getattr(hardware, "liquid_handler", None)
+    if isinstance(declared, LiquidHandler):
+        return lab.compile(protocol, hardware, liquid_handler=declared)
     return lab.compile(protocol, hardware)
-
 
 
 @pytest.mark.integration
