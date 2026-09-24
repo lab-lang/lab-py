@@ -1,11 +1,8 @@
-"""Compile the same water aliquoting protocol for a bench, OT-2, Flex, or STAR."""
+"""Water protocols and explicit SDK hardware fixtures for backend tests."""
 
-import argparse
-
-import lab
 from lab import Protocol, seconds, uL
 from lab.compiler import Target
-from lab.targets import STAR, Labware, LiquidHandler, Manual, Opentrons
+from lab.targets import STAR, Labware, Manual, Opentrons
 
 _star_import_error: ImportError | None = None
 try:
@@ -68,7 +65,7 @@ def target(name: str, *, thermal: bool = False) -> Target:
     if name == "star":
         if _star_import_error is not None:
             raise ImportError(
-                "Install lab-python[star] to use this example"
+                "Install lab-python[star] to use the STAR test fixture"
             ) from _star_import_error
         deck = STARDeck()
         tips = hamilton_96_tiprack_1000uL_filter(name="tips")
@@ -92,19 +89,3 @@ def target(name: str, *, thermal: bool = False) -> Target:
             max_volume=300 * uL,
         )
     raise ValueError(f"Unknown target {name!r}")
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--target", choices=("manual", "ot2", "flex", "star"), default="manual")
-    parser.add_argument("--out", default=None)
-    args = parser.parse_args()
-    hardware = target(args.target)
-    liquid_handler = None if args.target == "manual" else LiquidHandler(args.target)
-    bundle = lab.compile(water_aliquots(), hardware, liquid_handler=liquid_handler)
-    path = bundle.write(args.out or f"build/{args.target}")
-    print(f"{bundle.target.name}: {path} ({bundle.digest[:12]})")
-
-
-if __name__ == "__main__":
-    main()

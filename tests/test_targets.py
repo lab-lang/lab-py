@@ -8,9 +8,9 @@ from io import StringIO
 import pytest
 
 import lab
-from examples.water import target, water_aliquots
 from lab import CompileError, Protocol, celsius, seconds, uL
 from lab.targets import Labware, LiquidHandler, Manual
+from tests.target_fixture import target, water_aliquots
 from tests.thermal_fixture import thermal_aliquots
 
 try:

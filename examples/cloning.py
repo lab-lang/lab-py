@@ -1,101 +1,135 @@
-"""User-defined designs and requests for the staged cloning example."""
+"""Write the Golden Gate, heat-shock, and plating workflow."""
 
-from collections.abc import Mapping
+import argparse
+from pathlib import Path
 
-from lab.experiments.cloning.addresses import uri_name
+from lab.experiments.cloning import (
+    assembly_deck,
+    plating_deck,
+    transformation_deck,
+)
 from lab.protocols import (
     AssemblyReaction,
     AssemblyRequest,
     MaterialRef,
+    PlatingRequest,
+    ProtocolCompiler,
     TransformationReaction,
     TransformationRequest,
 )
+from lab.targets import LiquidHandler, Manual
 
-ASSEMBLIES: list[Mapping[str, object]] = [
-    {
-        "Product": "https://SBOL2Build.org/composite_plasmid_1/1",
-        "Backbone": "https://sbolcanvas.org/pSB1C3/1",
-        "PartsList": [
-            "https://sbolcanvas.org/J23101/1",
-            "https://sbolcanvas.org/B0034/1",
-            "https://sbolcanvas.org/GFP/1",
-            "https://sbolcanvas.org/B0015/1",
-        ],
-        "Restriction Enzyme": "https://SBOL2Build.org/BsaI/1",
-    },
-    {
-        "Product": "https://SBOL2Build.org/composite_plasmid_2/1",
-        "Backbone": "https://sbolcanvas.org/pSB1C3/1",
-        "PartsList": [
-            "https://sbolcanvas.org/J23106/1",
-            "https://sbolcanvas.org/B0034/1",
-            "https://sbolcanvas.org/RFP/1",
-            "https://sbolcanvas.org/B0015/1",
-        ],
-        "Restriction Enzyme": "https://SBOL2Build.org/BsaI/1",
-    },
-]
+PSB1C3 = MaterialRef(identity="https://sbolcanvas.org/pSB1C3/1", label="pSB1C3")
+J23101 = MaterialRef(identity="https://sbolcanvas.org/J23101/1", label="J23101")
+J23106 = MaterialRef(identity="https://sbolcanvas.org/J23106/1", label="J23106")
+B0034 = MaterialRef(identity="https://sbolcanvas.org/B0034/1", label="B0034")
+GFP = MaterialRef(identity="https://sbolcanvas.org/GFP/1", label="GFP")
+RFP = MaterialRef(identity="https://sbolcanvas.org/RFP/1", label="RFP")
+B0015 = MaterialRef(identity="https://sbolcanvas.org/B0015/1", label="B0015")
+BSAI = MaterialRef(identity="https://SBOL2Build.org/BsaI/1", label="BsaI")
+DH5ALPHA = MaterialRef(identity="https://sbolcanvas.org/DH5alpha/1", label="DH5alpha")
+BL21 = MaterialRef(identity="https://sbolcanvas.org/BL21/1", label="BL21")
+PLASMID_1 = MaterialRef(
+    identity="https://SBOL2Build.org/composite_plasmid_1/1", label="composite_plasmid_1"
+)
+PLASMID_2 = MaterialRef(
+    identity="https://SBOL2Build.org/composite_plasmid_2/1", label="composite_plasmid_2"
+)
 
-STRAINS: list[Mapping[str, object]] = [
-    {
-        "Strain": "https://SBOL2Build.org/composite_strain_1/1",
-        "Chassis": "https://sbolcanvas.org/DH5alpha/1",
-        "Plasmids": ["https://SBOL2Build.org/composite_plasmid_1/1"],
-    },
-    {
-        "Strain": "https://SBOL2Build.org/composite_strain_2/1",
-        "Chassis": "https://sbolcanvas.org/DH5alpha/1",
-        "Plasmids": ["https://SBOL2Build.org/composite_plasmid_2/1"],
-    },
-    {
-        "Strain": "https://SBOL2Build.org/composite_strain_3/1",
-        "Chassis": "https://sbolcanvas.org/BL21/1",
-        "Plasmids": ["https://SBOL2Build.org/composite_plasmid_1/1"],
-    },
-    {
-        "Strain": "https://SBOL2Build.org/composite_strain_4/1",
-        "Chassis": "https://sbolcanvas.org/BL21/1",
-        "Plasmids": ["https://SBOL2Build.org/composite_plasmid_2/1"],
-    },
-]
+ASSEMBLIES = (
+    AssemblyReaction(
+        id="assembly-1",
+        product=PLASMID_1,
+        backbone=PSB1C3,
+        parts=(J23101, B0034, GFP, B0015),
+        restriction_enzyme=BSAI,
+    ),
+    AssemblyReaction(
+        id="assembly-2",
+        product=PLASMID_2,
+        backbone=PSB1C3,
+        parts=(J23106, B0034, RFP, B0015),
+        restriction_enzyme=BSAI,
+    ),
+)
 
-
-def _material(identity: str) -> MaterialRef:
-    return MaterialRef(identity=identity, label=uri_name(identity))
-
-
-def example_assembly_request() -> AssemblyRequest:
-    """The two composite plasmids in ``ASSEMBLIES``."""
-    reactions = []
-    for index, row in enumerate(ASSEMBLIES, start=1):
-        parts = row["PartsList"]
-        if not isinstance(parts, list):
-            raise TypeError("PartsList must be a list.")
-        reactions.append(
-            AssemblyReaction(
-                id=f"assembly-{index}",
-                product=_material(str(row["Product"])),
-                backbone=_material(str(row["Backbone"])),
-                parts=tuple(_material(str(part)) for part in parts),
-                restriction_enzyme=_material(str(row["Restriction Enzyme"])),
-            )
-        )
-    return AssemblyRequest(id="sbol-loop-assembly", reactions=tuple(reactions))
+STRAINS = (
+    TransformationReaction(
+        id="transformation-1",
+        strain=MaterialRef(
+            identity="https://SBOL2Build.org/composite_strain_1/1", label="composite_strain_1"
+        ),
+        chassis=DH5ALPHA,
+        plasmids=(PLASMID_1,),
+    ),
+    TransformationReaction(
+        id="transformation-2",
+        strain=MaterialRef(
+            identity="https://SBOL2Build.org/composite_strain_2/1", label="composite_strain_2"
+        ),
+        chassis=DH5ALPHA,
+        plasmids=(PLASMID_2,),
+    ),
+    TransformationReaction(
+        id="transformation-3",
+        strain=MaterialRef(
+            identity="https://SBOL2Build.org/composite_strain_3/1", label="composite_strain_3"
+        ),
+        chassis=BL21,
+        plasmids=(PLASMID_1,),
+    ),
+    TransformationReaction(
+        id="transformation-4",
+        strain=MaterialRef(
+            identity="https://SBOL2Build.org/composite_strain_4/1", label="composite_strain_4"
+        ),
+        chassis=BL21,
+        plasmids=(PLASMID_2,),
+    ),
+)
 
 
-def example_transformation_request() -> TransformationRequest:
-    """The four strains in ``STRAINS``, each taking one assembled plasmid."""
-    reactions = []
-    for index, row in enumerate(STRAINS, start=1):
-        plasmids = row["Plasmids"]
-        if not isinstance(plasmids, list):
-            raise TypeError("Plasmids must be a list.")
-        reactions.append(
-            TransformationReaction(
-                id=f"transformation-{index}",
-                strain=_material(str(row["Strain"])),
-                chassis=_material(str(row["Chassis"])),
-                plasmids=tuple(_material(str(plasmid)) for plasmid in plasmids),
-            )
-        )
-    return TransformationRequest(id="heat-shock", reactions=tuple(reactions))
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--target",
+        choices=("manual", *(liquid_handler.value for liquid_handler in LiquidHandler)),
+        default="manual",
+    )
+    parser.add_argument("--out", default=None)
+    args = parser.parse_args()
+    liquid_handler = None if args.target == "manual" else LiquidHandler(args.target)
+    compiler = ProtocolCompiler()
+    assembled = compiler.compile(
+        AssemblyRequest(id="sbol-loop-assembly", reactions=ASSEMBLIES),
+        hardware=Manual() if liquid_handler is None else assembly_deck(),
+        liquid_handler=liquid_handler,
+    )
+    transformed = compiler.compile(
+        TransformationRequest(id="heat-shock", reactions=STRAINS),
+        inputs=assembled.manifest,
+        hardware=Manual() if liquid_handler is None else transformation_deck(),
+        liquid_handler=liquid_handler,
+    )
+    plated = compiler.compile(
+        PlatingRequest(
+            id="plating",
+            sample_ids=tuple(sample.id for sample in transformed.manifest.samples),
+            source_stage_id=transformed.manifest.protocol_id,
+        ),
+        inputs=transformed.manifest,
+        hardware=Manual() if liquid_handler is None else plating_deck(),
+        liquid_handler=liquid_handler,
+    )
+    out = Path(args.out or f"build/cloning/{args.target}")
+    for name, compiled in (
+        ("assembly", assembled),
+        ("transformation", transformed),
+        ("plating", plated),
+    ):
+        path = compiled.write(out / name)
+        print(f"{name}: {path}")
+
+
+if __name__ == "__main__":
+    main()

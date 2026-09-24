@@ -5,12 +5,8 @@ from decimal import Decimal
 import pytest
 
 import lab
-from examples.cloning import (
-    ASSEMBLIES,
-    STRAINS,
-    example_assembly_request,
-    example_transformation_request,
-)
+from examples.cloning import ASSEMBLIES as ASSEMBLY_REACTIONS
+from examples.cloning import STRAINS as TRANSFORMATION_REACTIONS
 from lab.experiments.cloning import (
     assembly_deck,
     golden_gate,
@@ -22,6 +18,7 @@ from lab.experiments.cloning import (
 )
 from lab.experiments.cloning.addresses import well_name
 from lab.protocols import (
+    AssemblyRequest,
     MaterialRef,
     PlatingRequest,
     ProtocolCompiler,
@@ -30,6 +27,7 @@ from lab.protocols import (
 )
 from lab.targets import Labware, LiquidHandler, Manual
 from lab.targets.lower import lower_deck
+from tests.cloning_fixture import ASSEMBLIES, STRAINS
 
 
 def test_sbol_assembly_assigns_column_major_products_and_water():
@@ -89,13 +87,17 @@ def test_plating_stays_on_one_plate_until_a_half_is_full():
 
 def test_compiler_links_stages_with_a_manifest_not_a_deck_tuple():
     compiler = ProtocolCompiler()
-    assembled = compiler.compile(example_assembly_request(), hardware=Manual())
+    assembled = compiler.compile(
+        AssemblyRequest(id="sbol-loop-assembly", reactions=ASSEMBLY_REACTIONS), hardware=Manual()
+    )
     assert assembled.manifest.plasmid_locations()[
         "https://SBOL2Build.org/composite_plasmid_1/1"
     ] == ["A1"]
     assert any(call.method == "aspirate" for call in assembled.program.instructions)
     transformed = compiler.compile(
-        example_transformation_request(), inputs=assembled.manifest, hardware=Manual()
+        TransformationRequest(id="heat-shock", reactions=TRANSFORMATION_REACTIONS),
+        inputs=assembled.manifest,
+        hardware=Manual(),
     )
     plated = compiler.compile(
         PlatingRequest(
@@ -108,7 +110,9 @@ def test_compiler_links_stages_with_a_manifest_not_a_deck_tuple():
     )
     assert plated.manifest.samples
     assert {call.method for call in plated.program.instructions} >= {"aspirate", "mix"}
-    manual = compiler.compile(example_assembly_request(), hardware=Manual())
+    manual = compiler.compile(
+        AssemblyRequest(id="sbol-loop-assembly", reactions=ASSEMBLY_REACTIONS), hardware=Manual()
+    )
     assert "protocol.html" in manual.files
     assert "protocol.py" not in manual.files
 
@@ -216,7 +220,7 @@ def test_ot2_lowering_uses_the_cloning_slots():
 def test_assembly_compiles_on_a_hamilton_star():
     pytest.importorskip("pylabrobot")
     compiled = ProtocolCompiler().compile(
-        example_assembly_request(),
+        AssemblyRequest(id="sbol-loop-assembly", reactions=ASSEMBLY_REACTIONS),
         hardware=assembly_deck(),
         liquid_handler=LiquidHandler.STAR,
     )

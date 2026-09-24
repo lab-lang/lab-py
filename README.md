@@ -46,7 +46,7 @@ compiled = ProtocolCompiler().compile(
 compiled.write("build/transformation")
 ```
 
-`MaterialRef` carries your material's identity and display label. `TransformationReaction` associates an output strain with its chassis and plasmids. The compiler assigns wells and records the transfers, heat shock, and recovery steps. The result includes an output manifest for downstream stages. Sample designs live in [examples/cloning.py](examples/cloning.py); the [staged example](examples/stages.py) links assembly, transformation, and plating.
+`MaterialRef` carries your material's identity and display label. `TransformationReaction` associates an output strain with its chassis and plasmids. The compiler assigns wells and records the transfers, heat shock, and recovery steps. The result includes an output manifest for downstream stages. The [cloning example](examples/cloning.py) defines its materials and reactions directly and links assembly, transformation, and plating.
 
 `transformation_deck(on_module=True)` names the 24-well DNA block, the cell tubes, and the reaction plate. Compilation lowers that deck for the handler you pass. This recipe's 2 µL transfers lower for `LiquidHandler.OT2` and `LiquidHandler.STAR`. A concrete deck for one handler cannot be compiled as another. For a document with no robot, import `Manual` from `lab.targets` and use `ProtocolCompiler().compile(request, hardware=Manual())`.
 
@@ -73,12 +73,12 @@ Python 3.12. Robot SDKs are optional.
 
 ```sh
 uv sync --all-extras
-uv run python -m examples.stages --target manual
-uv run python -m examples.stages --target ot2
-uv run python -m examples.stages --target star
+uv run python -m examples.cloning --target manual
+uv run python -m examples.cloning --target ot2
+uv run python -m examples.cloning --target star
 ```
 
-A bundle is `protocol.html`, `plan.json`, and `protocol.py` when the target is a robot. `ProtocolCompiler` also writes `manifest.json` with the planned outputs. Compilation never connects to hardware. Rebuilding identical files succeeds. A different plan in the same directory is rejected.
+A bundle is `protocol.html`, `plan.json`, and `protocol.py` when the target is a robot. `ProtocolCompiler` also writes `manifest.json` with the planned outputs. The cloning example writes separate `assembly`, `transformation`, and `plating` bundles under `build/cloning/<target>` or the directory supplied with `--out`, including for the manual target. Compilation never connects to hardware. Rebuilding identical files succeeds. A different plan in the same directory is rejected.
 
 ## Status
 
