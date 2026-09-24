@@ -93,8 +93,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--target",
-        choices=("manual", *(liquid_handler.value for liquid_handler in LiquidHandler)),
+        choices=("manual", LiquidHandler.OT2.value, LiquidHandler.FLEX.value),
         default="manual",
+        help="Use a preset or manual plan. See examples.deck_layouts for layouts across handlers.",
     )
     parser.add_argument("--out", default=None)
     args = parser.parse_args()

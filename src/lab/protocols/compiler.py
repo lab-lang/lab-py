@@ -1,7 +1,8 @@
 """Plan a request and allocate wells. A handler renders the same plan for its robot.
 
 Planning does not know which pipette is mounted. Allocation names container roles
-and geometry, not labware load names. Pass a ``Deck`` or a ``Target`` to render a script.
+and geometry, not labware load names. Pass a Lab ``Deck`` with a supported preset or
+handler-specific layouts, or a concrete backend ``Target`` for low-level integration.
 """
 
 import json

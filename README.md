@@ -11,7 +11,7 @@
 
 Lab Compiler is the Python compiler for laboratory work. A program names materials, wells, and steps. Compilation checks volumes, units, and bindings, then writes a printable document and code for the handler you name.
 
-The same plan renders for an Opentrons OT-2, an Opentrons Flex, or a Hamilton STAR. You describe the deck by container and site. Compilation lowers it to that handler's pipettes, modules, carriers, and labware. `LiquidHandler.OT2`, `LiquidHandler.FLEX`, and `LiquidHandler.STAR` are peers. A concrete deck for one of them cannot be compiled as another.
+Protocol containers, steps, and decks are expressed in Lab types. A `Deck` holds shared container requirements and can include a `DeckLayout` for each liquid handler. Compilation selects the layout, checks the handler's capabilities, and translates Lab equipment and placements into Opentrons or PyLabRobot configuration. Supported presets handle simple layouts. You do not need to construct SDK deck objects.
 
 ## Write a protocol
 
@@ -41,31 +41,55 @@ request = TransformationRequest(
 compiled = ProtocolCompiler().compile(
     request,
     hardware=transformation_deck(on_module=True),
-    liquid_handler=LiquidHandler.STAR,
+    liquid_handler=LiquidHandler.OT2,
 )
 compiled.write("build/transformation")
 ```
 
 `MaterialRef` carries your material's identity and display label. `TransformationReaction` associates an output strain with its chassis and plasmids. The compiler assigns wells and records the transfers, heat shock, and recovery steps. The result includes an output manifest for downstream stages. The [cloning example](examples/cloning.py) defines its materials and reactions directly and links assembly, transformation, and plating.
 
-`transformation_deck(on_module=True)` names the 24-well DNA block, the cell tubes, and the reaction plate. Compilation lowers that deck for the handler you pass. This recipe's 2 µL transfers lower for `LiquidHandler.OT2` and `LiquidHandler.STAR`. A concrete deck for one handler cannot be compiled as another. For a document with no robot, import `Manual` from `lab.targets` and use `ProtocolCompiler().compile(request, hardware=Manual())`.
+`transformation_deck(on_module=True)` names the 24-well DNA block, the cell tubes, and the reaction plate. This is an Opentrons preset; the example uses `LiquidHandler.OT2`. For a document with no robot, import `Manual` from `lab.targets` and use `ProtocolCompiler().compile(request, hardware=Manual())`.
 
 ## Describe a deck
 
-`LabwareSpec` defines a labware kind, geometry, and logical capacity per well. `ContainerSpec` gives that specification a protocol id; `Container` adds a `DeckSite` placement. Allocation and deck construction share the same immutable specifications.
+`LabwareSpec` defines a labware kind, geometry, and logical capacity per well. `ContainerSpec` gives that specification a protocol id. These specifications are independent of the robot. `Container` adds a `DeckSite` placement group for the built-in presets.
 
 ```python
 from lab.deck import Container, Deck, DeckSite
 from lab.labware import PCR_PLATE_96
 
-deck = Deck(
-    containers=(
-        Container(id="samples", labware=PCR_PLATE_96, site=DeckSite.PLATES),
-    )
-)
+deck = Deck(containers=(Container(id="samples", labware=PCR_PLATE_96, site=DeckSite.PLATES),))
 ```
 
-Use `LabwareKind` and `DeckSite` members when defining custom labware and placements. Construction rejects raw kind/site strings, incompatible placements, invalid geometry or capacity, duplicate container ids, and multiple containers on a single thermal module. Physical labware names and slot assignments belong to each robot backend.
+This ambient plate preset can compile for OT-2, Flex, or STAR. `DeckSite` groups express the role of a container; they are not physical slot or carrier coordinates. The STAR preset supports up to ten ambient plates using plate carriers and one tip rack. Equipment outside a supported preset needs a Lab `DeckLayout`. In particular, cold blocks and tube racks are never silently converted into ordinary plates for STAR.
+
+## Describe physical layouts in Lab
+
+Use `DeckLayout` when equipment or placement needs to be explicit. Each layout names its `LiquidHandler` and places the same shared containers. All objects below belong to Lab:
+
+| Object | Purpose |
+| --- | --- |
+| `Placement` | A container's physical labware model, position, and optional well mapping |
+| `Slot`, `Rail`, `HolderSite` | A deck slot, carrier rail, or indexed site on a named holder |
+| `Carrier`, `Module` | Equipment that occupies a position and holds other resources |
+| `TipRack` | A tip model and its position |
+| `Pipette`, `Channel` | A mounted pipette or independent channel, with its assigned tip racks |
+
+Equipment models are typed identifiers from `lab.equipment`; each backend resolves the models it supports. A STAR layout can place a carrier at `Rail(20)` and a plate at `HolderSite("plates", 3)`. An Opentrons layout can place the same logical container at `Slot("2")` or on a named module. The shared model does not impose one thermal device on every handler. Targets enforce their supported device counts, models, locations, and module footprints.
+
+The [deck layouts example](examples/deck_layouts.py) prepares duplicate BSA standards and purified protein samples in a flat-bottom assay plate using a reservoir of prepared BCA working reagent. `protocol()` describes the transfers; `deck()` shares the container requirements and calls `opentrons_layout()` for OT-2 and Flex and `hamilton_layout()` for STAR. The logical source wells map to physical wells `B1`–`B12` on each handler; STAR also specifies carriers, rails, and occupied carrier sites. Mixing, incubation, and absorbance reading remain an explicit operator handoff following the [Pierce BCA guide](https://www.thermofisher.com/TFS-Assets/LSG/manuals/MAN0011430_Pierce_BCA_Protein_Asy_UG.pdf). The example imports only Lab types and the Python standard library, with layouts to adapt to installed equipment.
+
+```python
+from examples.deck_layouts import deck, protocol
+from lab import compile
+from lab.targets import LiquidHandler
+
+compiled = compile(protocol(), deck(), liquid_handler=LiquidHandler.STAR)
+```
+
+The compiler rejects missing layouts, conflicting placements, invalid holder references, incompatible labware, and unsupported target features. It preserves the authored Lab deck in `plan.json` alongside the resolved backend configuration. Physical geometry comes from the selected equipment definitions; the STAR backend constructs and serializes the PyLabRobot resource hierarchy internally.
+
+For Opentrons, place thermal labware on a supported `Module`. STAR thermal operations currently use an external device integration: declare the container in `DeckLayout.external_thermal_resources` and supply the async `thermocycle` callback when the generated `run()` executes. The callback controls the device and returns the plate to its original position. Compilation checks the declaration; the software preview only reports the request. Unsupported on-deck thermal models produce an error.
 
 ## Try it
 
@@ -75,10 +99,12 @@ Python 3.12. Robot SDKs are optional.
 uv sync --all-extras
 uv run python -m examples.cloning --target manual
 uv run python -m examples.cloning --target ot2
-uv run python -m examples.cloning --target star
+uv run python -m examples.deck_layouts --target star
+uv run python -m examples.deck_layouts --target ot2
+uv run python -m examples.deck_layouts --target flex
 ```
 
-A bundle is `protocol.html`, `plan.json`, and `protocol.py` when the target is a robot. `ProtocolCompiler` also writes `manifest.json` with the planned outputs. The cloning example writes separate `assembly`, `transformation`, and `plating` bundles under `build/cloning/<target>` or the directory supplied with `--out`, including for the manual target. Compilation never connects to hardware. Rebuilding identical files succeeds. A different plan in the same directory is rejected.
+A bundle is `protocol.html`, `plan.json`, and `protocol.py` when the target is a robot. `ProtocolCompiler` also writes `manifest.json` with the planned outputs. The cloning example writes separate `assembly`, `transformation`, and `plating` bundles under `build/cloning/<target>` or the directory supplied with `--out`, including for the manual target. The shared deck example writes to `build/decks/<target>` or its `--out` directory. Compilation never connects to hardware. Rebuilding identical files succeeds. A different plan in the same directory is rejected.
 
 ## Status
 

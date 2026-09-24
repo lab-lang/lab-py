@@ -1,8 +1,8 @@
-"""Abstract decks for this experiment.
+"""Logical deck requirements and placement groups for this experiment.
 
 A deck places named containers using reusable labware specifications and typed sites.
 The ids match the plates declared by the stage protocols. Compilation lowers the
-deck for an OT-2, a Flex, or a STAR.
+deck using the selected handler's supported preset or a supplied Lab DeckLayout.
 """
 
 from lab.deck import Container, Deck, DeckSite

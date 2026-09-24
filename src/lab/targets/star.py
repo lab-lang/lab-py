@@ -1,14 +1,29 @@
-"""Compile against a supplied PyLabRobot Hamilton deck without connecting to it."""
+"""Lower Lab layouts into PyLabRobot resources and compile without connecting to hardware."""
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
 from importlib.metadata import version
 from typing import Any
 
-from lab.deck import Container as DeckContainer
-from lab.deck import Deck
+from lab.deck import (
+    Carrier,
+    Channel,
+    Deck,
+    DeckLayout,
+    DeckSite,
+    HolderSite,
+    Placement,
+    Rail,
+)
+from lab.deck import (
+    Container as DeckContainer,
+)
+from lab.deck import (
+    TipRack as DeckTipRack,
+)
 from lab.documents import describe
+from lab.equipment import CarrierModel, LabwareModel, TipRackModel
 from lab.labware import LabwareKind
 from lab.model import (
     Binding,
@@ -30,19 +45,12 @@ from lab.validation import CompileError, step_error
 
 _sdk_import_error: ImportError | None = None
 try:
+    import pylabrobot.resources as plr
     from pylabrobot.resources import (
-        PLT_CAR_L5AC_A00,
-        TIP_CAR_480_A00,
-        Azenta4titudeFrameStar_96_wellplate_200ul_Vb,
-        CellTreat_24_wellplate_3300ul_Fb,
         Container,
-        Cor_Axy_24_wellplate_10mL_Vb,
         ItemizedResource,
         Resource,
-        STARDeck,
         TipRack,
-        hamilton_96_tiprack_50uL,
-        hamilton_96_tiprack_300uL,
     )
     from pylabrobot.resources.hamilton import HamiltonSTARDeck
 except ImportError as exc:
@@ -51,7 +59,13 @@ except ImportError as exc:
 
 @dataclass
 class STAR:
-    """Use standard PyLabRobot resources and one of the eight pipetting channels."""
+    """Bind protocol resources to a supplied physical STAR or STARlet configuration.
+
+    The caller places carriers, holders, labware, and tips on a PyLabRobot deck.
+    ``labware`` maps protocol resource names to those exact physical resources.
+    Compilation preserves this hierarchy and uses one configured pipetting channel.
+    Thermal operations require an external device callback when the artifact runs.
+    """
 
     deck: Any
     labware: dict[str, Any]
@@ -59,6 +73,8 @@ class STAR:
     min_volume: Any
     max_volume: Any
     channel: int = 0
+    well_maps: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    external_thermal_resources: tuple[str, ...] | None = None
 
     @property
     def liquid_handler(self) -> LiquidHandler:
@@ -79,6 +95,8 @@ class STAR:
             raise CompileError("Minimum volume exceeds maximum volume")
         if set(self.labware) != {resource.name for resource in protocol.resources}:
             raise CompileError("Labware bindings must match the protocol's resources exactly")
+        if not self.well_maps.keys() <= self.labware.keys():
+            raise CompileError("Well mappings must name bound resources")
 
         def on_deck(resource: Any) -> None:
             if self.deck.get_resource(resource.name) is not resource:
@@ -89,14 +107,19 @@ class STAR:
         for resource in protocol.resources:
             physical = self.labware[resource.name]
             on_deck(physical)
-            for well in resource.wells:
+            physical_wells = self.well_maps.get(resource.name) or resource.wells
+            if len(physical_wells) != len(resource.wells):
+                raise CompileError(f"Wrong number of bound wells for {resource.name}")
+            for well, physical_well in zip(resource.wells, physical_wells, strict=True):
                 if isinstance(physical, Container) and len(resource.wells) == 1:
                     container = physical
                 elif isinstance(physical, ItemizedResource):
                     try:
-                        container = physical.get_item(well)
+                        container = physical.get_item(physical_well)
                     except (IndexError, ValueError, KeyError) as exc:
-                        raise CompileError(f"{well} is not present in {physical.name}") from exc
+                        raise CompileError(
+                            f"{physical_well} is not present in {physical.name}"
+                        ) from exc
                 else:
                     raise CompileError("Bind one container or an indexed collection of wells")
                 if not isinstance(container, Container):
@@ -139,10 +162,28 @@ class STAR:
             "tip_policy": "fresh tip per transfer or mix",
             "tips": [spot.name for spot in tips],
             "bindings": encode(tuple(bindings)),
+            "external_thermal_resources": self.external_thermal_resources,
         }
         commands = []
         tip_index = 0
         for index, step in enumerate(protocol.steps):
+            if isinstance(step, (Thermocycle, SetTemperature)):
+                if (
+                    self.external_thermal_resources is not None
+                    and step.resource not in self.external_thermal_resources
+                ):
+                    raise step_error(
+                        index,
+                        step,
+                        f"{step.resource} needs a declared external thermal handoff "
+                        "in its DeckLayout",
+                    )
+                if self.well_maps.get(step.resource):
+                    raise step_error(
+                        index,
+                        step,
+                        "Thermal operations require a whole-plate binding without a well remapping",
+                    )
             commands.append(f"print({describe(step)!r})")
             if isinstance(step, (Transfer, Mix, Distribute)):
                 if tip_index >= len(tips):
@@ -306,52 +347,151 @@ class STAR:
         )
 
 
-def lower_deck(deck: Deck, *, volumes: tuple[Decimal, ...]) -> STAR:
-    """Bind a deck to STAR carriers, plates, and one tip size."""
+_LAYOUT_LABWARE = {
+    LabwareModel.CORNING_96_360_UL: "Cor_96_wellplate_360ul_Fb",
+    LabwareModel.NEST_12_RESERVOIR_15_ML: "nest_12_troughplate_15000uL_Vb",
+    LabwareModel.AZENTA_96_PCR_200_UL: "Azenta4titudeFrameStar_96_wellplate_200ul_Vb",
+}
+_LAYOUT_CARRIERS = {
+    CarrierModel.HAMILTON_PLATE_5: "PLT_CAR_L5AC_A00",
+    CarrierModel.HAMILTON_TIP_5: "TIP_CAR_480_A00",
+}
+_LAYOUT_TIPS = {
+    TipRackModel.HAMILTON_50_UL: "hamilton_96_tiprack_50uL",
+    TipRackModel.HAMILTON_300_UL: "hamilton_96_tiprack_300uL",
+}
+
+
+def lower_layout(deck: Deck, layout: DeckLayout) -> STAR:
+    """Build the PyLabRobot resource tree from Lab-owned equipment and placements."""
     if _sdk_import_error is not None:
         raise ImportError(
             "Install lab-python[star] to compile for Hamilton STAR"
         ) from _sdk_import_error
-    plates = {container.id: _star_plate(container) for container in deck.containers}
-    widest = max(volumes, default=Decimal(1))
-    if widest <= 50:
-        tips = hamilton_96_tiprack_50uL(name="tips")
-        minimum, maximum = 1, 50
-    else:
-        tips = hamilton_96_tiprack_300uL(name="tips")
-        minimum, maximum = 1, 300
-    robot = STARDeck()
-    tip_carrier = TIP_CAR_480_A00(name="tip_carrier")
-    tip_carrier[0] = tips
-    robot.assign_child_resource(tip_carrier, rails=3)
-    carrier = PLT_CAR_L5AC_A00(name="plates")
-    overflow = PLT_CAR_L5AC_A00(name="more_plates")
-    for index, plate in enumerate(plates.values()):
-        (carrier if index < 5 else overflow)[index if index < 5 else index - 5] = plate
-    robot.assign_child_resource(carrier, rails=15)
-    if len(plates) > 5:
-        robot.assign_child_resource(overflow, rails=30)
+    if layout.pipettes:
+        raise CompileError("STAR layouts configure independent Channel objects.")
+    if layout.modules:
+        raise CompileError(
+            "The STAR backend does not yet support on-deck Module models; "
+            "configure a declared external thermal handoff."
+        )
+    if len(layout.channels) != 1:
+        raise CompileError(
+            "The STAR backend currently supports one independent channel per layout."
+        )
+    channel = layout.channels[0]
+    if not 0 <= channel.index < 8:
+        raise CompileError("STAR channel must be an integer from 0 to 7")
+    robot = plr.STARDeck()
+    carriers: dict[str, Any] = {}
+    try:
+        for carrier in layout.carriers:
+            if not isinstance(carrier.location, Rail):
+                raise CompileError("STAR carriers require a Rail location.")
+            physical = getattr(plr, _LAYOUT_CARRIERS[carrier.model])(name=carrier.id)
+            robot.assign_child_resource(physical, rails=carrier.location.index)
+            carriers[carrier.id] = physical
+
+        def place(resource: Any, location: Any, expected_carrier: CarrierModel) -> None:
+            if not isinstance(location, HolderSite) or location.holder not in carriers:
+                raise CompileError("STAR labware and tips require a carrier HolderSite.")
+            model = next(item.model for item in layout.carriers if item.id == location.holder)
+            if model != expected_carrier:
+                raise CompileError(f"{resource.name} requires a {expected_carrier.value} carrier.")
+            carriers[location.holder][location.index] = resource
+
+        labware: dict[str, Any] = {}
+        for placement in layout.placements:
+            factory = _LAYOUT_LABWARE.get(placement.model)
+            if factory is None:
+                raise CompileError(f"STAR does not support labware model {placement.model.value}.")
+            physical = getattr(plr, factory)(name=placement.container)
+            place(physical, placement.location, CarrierModel.HAMILTON_PLATE_5)
+            labware[placement.container] = physical
+        tips: dict[str, Any] = {}
+        for rack in layout.tip_racks:
+            factory = _LAYOUT_TIPS.get(rack.model)
+            if factory is None:
+                raise CompileError(f"STAR does not support tip rack model {rack.model.value}.")
+            physical = getattr(plr, factory)(name=rack.id)
+            place(physical, rack.location, CarrierModel.HAMILTON_TIP_5)
+            tips[rack.id] = physical
+    except CompileError:
+        raise
+    except (ValueError, IndexError) as exc:
+        raise CompileError(f"Invalid STAR layout: {exc}") from exc
     return STAR(
         deck=robot,
-        labware=plates,
-        tip_racks=(tips,),
-        min_volume=minimum * uL,
-        max_volume=maximum * uL,
+        labware=labware,
+        tip_racks=tuple(tips[name] for name in channel.tip_racks),
+        min_volume=channel.min_volume_ul * uL,
+        max_volume=channel.max_volume_ul * uL,
+        channel=channel.index,
+        well_maps={
+            placement.container: placement.wells
+            for placement in layout.placements
+            if placement.wells
+        },
+        external_thermal_resources=layout.external_thermal_resources,
     )
 
 
-def _star_plate(container: DeckContainer) -> Any:
-    name = f"{container.id}_plate"
-    if container.labware.kind in {LabwareKind.COLD_BLOCK, LabwareKind.TUBE_RACK}:
-        if container.labware.rows > 4 or container.labware.columns > 6:
-            raise CompileError(f"{container.id} does not fit a 24-well plate")
-        return CellTreat_24_wellplate_3300ul_Fb(name=name)
-    if container.labware.kind in {LabwareKind.PCR_PLATE, LabwareKind.CULTURE_PLATE}:
-        if container.labware.rows > 8 or container.labware.columns > 12:
-            raise CompileError(f"{container.id} does not fit a 96-well plate")
-        return Azenta4titudeFrameStar_96_wellplate_200ul_Vb(name=name)
-    if container.labware.kind == LabwareKind.CONICAL_RACK:
-        if container.labware.rows > 4 or container.labware.columns > 6:
-            raise CompileError(f"{container.id} does not fit a 24-well reservoir")
-        return Cor_Axy_24_wellplate_10mL_Vb(name=name)
-    raise CompileError(f"No STAR labware for {container.labware.kind.value}")
+def lower_deck(deck: Deck, *, volumes: tuple[Decimal, ...]) -> STAR:
+    """Resolve an ambient plate preset; other equipment needs a Lab DeckLayout."""
+    if len(deck.containers) > 10:
+        raise CompileError("The STAR plate preset holds at most ten plates; provide a DeckLayout.")
+    placements = []
+    carriers = [
+        Carrier(id="tip_carrier", model=CarrierModel.HAMILTON_TIP_5, location=Rail(3)),
+        Carrier(id="plate_carrier", model=CarrierModel.HAMILTON_PLATE_5, location=Rail(15)),
+    ]
+    if len(deck.containers) > 5:
+        carriers.append(
+            Carrier(id="overflow_carrier", model=CarrierModel.HAMILTON_PLATE_5, location=Rail(30))
+        )
+    for index, container in enumerate(deck.containers):
+        if not isinstance(container, DeckContainer) or container.site not in (
+            DeckSite.PLATES,
+            DeckSite.MORE_PLATES,
+        ):
+            raise CompileError(
+                f"No STAR preset for {container.id}; provide a Lab DeckLayout "
+                "for its equipment and thermal requirements."
+            )
+        if container.labware.kind not in (LabwareKind.PLATE, LabwareKind.PCR_PLATE):
+            raise CompileError(f"No STAR plate preset for {container.labware.kind.value}.")
+        placements.append(
+            Placement(
+                container=container.id,
+                model=LabwareModel.CORNING_96_360_UL
+                if container.labware.kind == LabwareKind.PLATE
+                else LabwareModel.AZENTA_96_PCR_200_UL,
+                location=HolderSite(
+                    "plate_carrier" if index < 5 else "overflow_carrier", index % 5
+                ),
+            )
+        )
+    maximum = max(volumes, default=Decimal(1))
+    layout = DeckLayout(
+        liquid_handler=LiquidHandler.STAR,
+        placements=tuple(placements),
+        carriers=tuple(carriers),
+        tip_racks=(
+            DeckTipRack(
+                id="tips",
+                model=TipRackModel.HAMILTON_50_UL
+                if maximum <= 50
+                else TipRackModel.HAMILTON_300_UL,
+                location=HolderSite("tip_carrier", 0),
+            ),
+        ),
+        channels=(
+            Channel(
+                index=0,
+                min_volume_ul=Decimal(1),
+                max_volume_ul=Decimal(50 if maximum <= 50 else 300),
+                tip_racks=("tips",),
+            ),
+        ),
+    )
+    return lower_layout(deck, layout)

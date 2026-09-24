@@ -8,8 +8,14 @@ from io import StringIO
 import pytest
 
 import lab
+from examples.deck_layouts import deck as example_deck
+from examples.deck_layouts import protocol as example_protocol
 from lab import CompileError, Protocol, celsius, seconds, uL
+from lab.deck import Container, Deck, DeckSite, HolderSite, Module, Slot
+from lab.equipment import LabwareModel, ModuleModel
+from lab.labware import COLD_BLOCK_24, PCR_PLATE_96, PLATE_96, LabwareKind, LabwareSpec
 from lab.targets import Labware, LiquidHandler, Manual
+from lab.targets.lower import lower_deck
 from tests.target_fixture import target, water_aliquots
 from tests.thermal_fixture import thermal_aliquots
 
@@ -25,6 +31,7 @@ try:
     from pylabrobot.liquid_handling.backends import SerializingBackend
     from pylabrobot.liquid_handling.backends.hamilton.STAR_chatterbox import STARChatterboxBackend
     from pylabrobot.resources import Resource, set_volume_tracking
+
 except ImportError:
     _has_star = False
 else:
@@ -192,7 +199,208 @@ async def test_star_executes_real_pylabrobot_frontend_and_tracks_volumes():
 
 @pytest.mark.integration
 @requires_star
+async def test_star_example_preserves_supplied_carriers_sites_and_well_bindings():
+    class Recorder(SerializingBackend):
+        async def send_command(self, command, data=None):
+            return None
+
+    def placements(deck):
+        return {
+            resource.name: (resource.model, resource.parent.name, resource.get_absolute_location())
+            for resource in deck.get_all_children()
+        }
+
+    deck = example_deck()
+    hardware = lower_deck(deck, LiquidHandler.STAR)
+    source = hardware.labware["sources"].get_item("B1")
+    assay = hardware.labware["assay"]
+    source_name = source.name
+    source_location = source.get_absolute_location()
+    assay_location = assay.get_absolute_location()
+    expected_placements = placements(hardware.deck)
+    bundle = lab.compile(example_protocol(), deck, liquid_handler=LiquidHandler.STAR)
+    configuration = json.loads(bundle.plan_json)["target"]["configuration"]
+    saved_deck = Resource.deserialize(json.loads(configuration["deck_json"]))
+    assert placements(saved_deck) == expected_placements
+    bindings = {binding.location: binding.physical for binding in bundle.target.bindings}
+    for column in range(1, 13):
+        assert bindings[lab.model.Location("sources", f"A{column}")] == (
+            hardware.labware["sources"].get_item(f"B{column}").name
+        )
+    assert bindings[lab.model.Location("assay", "A2")] == assay.get_item("A2").name
+    assert bindings[lab.model.Location("working_reagent", "A1")] == (
+        hardware.labware["working_reagent"].get_item("A1").name
+    )
+
+    # The generated artifact must retain the supplied placement even if the caller edits it.
+    hardware.deck.get_resource("plate_carrier").location.x += 10
+    namespace = {"__name__": "_generated"}
+    exec(builtins.compile(bundle.files["protocol.py"], "star_example.py", "exec"), namespace)
+    set_volume_tracking(True)
+    handoffs = []
+    try:
+        handler = await namespace["run"](Recorder(num_channels=8), confirm=handoffs.append)
+    finally:
+        set_volume_tracking(False)
+    restored_source = handler.deck.get_resource(source_name)
+    restored_assay = handler.deck.get_resource("assay")
+    assert restored_source.get_absolute_location() == source_location
+    assert restored_assay.get_absolute_location() == assay_location
+    assert restored_source.tracker.get_used_volume() == 50
+    for column in range(1, 13):
+        assert (
+            handler.deck.get_resource("sources").get_item(f"B{column}").tracker.get_used_volume()
+            == 50
+        )
+        for row in ("A", "B"):
+            assert restored_assay.get_item(f"{row}{column}").tracker.get_used_volume() == 225
+    reagent = handler.deck.get_resource("working_reagent")
+    assert reagent.get_item("A1").tracker.get_used_volume() == 1200
+    assert reagent.parent is handler.deck.get_resource("plate_carrier")[4]
+    assert len(handoffs) == 1 and "BCA" in handoffs[0]
+    assert restored_assay.parent is handler.deck.get_resource("plate_carrier")[3]
+    assert handler.deck.get_resource("tips").parent is handler.deck.get_resource("tip_carrier")[2]
+
+
+@pytest.mark.integration
+@requires_opentrons
+@pytest.mark.parametrize("handler", [LiquidHandler.OT2, LiquidHandler.FLEX])
+def test_same_lab_deck_compiles_for_opentrons(handler):
+    bundle = lab.compile(example_protocol(), example_deck(), liquid_handler=handler)
+    log, _ = simulate(StringIO(bundle.files["protocol.py"]))
+    aspirations = [
+        event["payload"]["text"]
+        for event in log
+        if event["payload"]["text"].startswith("Aspirating")
+    ]
+    assert len(aspirations) == 48
+    assert all(text.startswith("Aspirating 25.0") for text in aspirations[:24])
+    assert [text.split(" from ", 1)[1].split(" of ", 1)[0] for text in aspirations[:24]] == [
+        f"B{column}" for _ in range(2) for column in range(1, 13)
+    ]
+    assert all(text.startswith("Aspirating 200.0") for text in aspirations[24:])
+    assert all("A1 of NEST 12 Well Reservoir 15 mL" in text for text in aspirations[24:])
+    volumes = dict(bundle.final_volumes)
+    for column in range(1, 13):
+        assert volumes[lab.model.Location("sources", f"A{column}")] == 50
+        for row in ("A", "B"):
+            assert volumes[lab.model.Location("assay", f"{row}{column}")] == 225
+    assert volumes[lab.model.Location("working_reagent", "A1")] == 1200
+    assert any("Pausing" in event["payload"]["text"] for event in log)
+    configuration = json.loads(bundle.target.configuration_json)
+    assert len(configuration["lab_deck"]["layouts"]) == 3
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("handler", list(LiquidHandler))
+def test_ambient_plate_preset_remains_portable(handler):
+    if (handler == LiquidHandler.STAR and not _has_star) or (
+        handler != LiquidHandler.STAR and not _has_opentrons
+    ):
+        pytest.skip("Target SDK not installed")
+    deck = Deck(
+        containers=(
+            Container(
+                id="water",
+                labware=LabwareSpec(
+                    kind=LabwareKind.PLATE, rows=1, columns=1, capacity_ul=Decimal(300)
+                ),
+                site=DeckSite.PLATES,
+            ),
+            Container(id="aliquots", labware=PLATE_96, site=DeckSite.PLATES),
+        )
+    )
+    bundle = lab.compile(water_aliquots(), deck, liquid_handler=handler)
+    assert dict(bundle.final_volumes)[lab.model.Location("water", "A1")] == 100
+
+
+@pytest.mark.integration
+@requires_opentrons
+def test_lab_layout_supports_two_independent_temperature_modules():
+    template = example_deck().layout_for(LiquidHandler.OT2)
+    containers = tuple(
+        Container(id=name, labware=COLD_BLOCK_24, site=DeckSite.TEMPERATURE_MODULE)
+        for name in ("first", "second")
+    )
+    layout = replace(
+        template,
+        placements=tuple(
+            replace(
+                template.placements[0],
+                container=name,
+                model=LabwareModel.OPENTRONS_24_COLD_BLOCK,
+                location=HolderSite(f"{name}_module"),
+                wells=(),
+            )
+            for name in ("first", "second")
+        ),
+        modules=(
+            Module(id="first_module", model=ModuleModel.TEMPERATURE_GEN2, location=Slot("1")),
+            Module(id="second_module", model=ModuleModel.TEMPERATURE_GEN2, location=Slot("4")),
+        ),
+    )
+    protocol = Protocol("Two temperature devices")
+    for name in ("first", "second"):
+        block = protocol.plate(name, shape=(4, 6), capacity=1500 * uL)
+        protocol.set_temperature(block, celsius(4))
+    bundle = lab.compile(
+        protocol, Deck(containers=containers, layouts=(layout,)), liquid_handler=LiquidHandler.OT2
+    )
+    simulate(StringIO(bundle.files["protocol.py"]))
+    assert "temperature_module_1.set_temperature(4)" in bundle.files["protocol.py"]
+    assert "temperature_module_4.set_temperature(4)" in bundle.files["protocol.py"]
+
+
+@pytest.mark.integration
+@requires_opentrons
+@pytest.mark.parametrize("source_slot", ["1", "8"])
+def test_lab_thermocycler_layout_reserves_all_occupied_slots(source_slot):
+    deck = example_deck()
+    # This capability check uses a PCR plate, independently of the BCA assay.
+    p = Protocol("Thermocycler footprint")
+    sources = p.plate("sources", shape=(1, 12), capacity=200 * uL)
+    assay = p.plate("assay", capacity=100 * uL)
+    p.container("working_reagent", capacity=15000 * uL)
+    p.load(sources["A1"], "Buffer", volume=100 * uL)
+    p.transfer(sources["A1"], assay["A1"], volume=25 * uL)
+    template = deck.layout_for(LiquidHandler.OT2)
+    layout = replace(
+        template,
+        placements=(
+            replace(template.placements[0], location=Slot(source_slot)),
+            replace(
+                template.placements[1],
+                model=LabwareModel.NEST_96_PCR_100_UL,
+                location=HolderSite("cycler"),
+            ),
+            *template.placements[2:],
+        ),
+        modules=(Module(id="cycler", model=ModuleModel.THERMOCYCLER_GEN1, location=Slot("7")),),
+    )
+    deck = replace(
+        deck,
+        containers=(
+            deck.containers[0],
+            replace(deck.containers[1], labware=PCR_PLATE_96),
+            *deck.containers[2:],
+        ),
+        layouts=(layout,),
+    )
+    if source_slot == "8":
+        with pytest.raises(CompileError, match="Unavailable OT-2 deck slot: 8"):
+            lab.compile(p, deck, liquid_handler=LiquidHandler.OT2)
+    else:
+        bundle = lab.compile(p, deck, liquid_handler=LiquidHandler.OT2)
+        simulate(StringIO(bundle.files["protocol.py"]))
+
+
+@pytest.mark.integration
+@requires_star
 def test_star_missing_tips_range_and_deck_membership():
+    t = target("star")
+    t.labware.pop("water")
+    with pytest.raises(CompileError, match="bindings.*exactly"):
+        compiled(water_aliquots(), t)
     t = target("star")
     t.tip_racks = ()
     with pytest.raises(CompileError, match="fresh tips"):

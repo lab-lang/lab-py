@@ -6,8 +6,9 @@ from decimal import Decimal
 from importlib.metadata import version
 from typing import Any, Literal
 
-from lab.deck import Deck, DeckSite
+from lab.deck import Container, Deck, DeckLayout, DeckSite, HolderSite, Slot
 from lab.documents import describe
+from lab.equipment import LabwareModel, ModuleModel, TipRackModel
 from lab.labware import LabwareKind
 from lab.model import (
     Binding,
@@ -407,6 +408,7 @@ _SITE_SLOTS: dict[str, dict[DeckSite, tuple[str, ...]]] = {
     },
 }
 _LOAD_NAMES: dict[LabwareKind, str] = {
+    LabwareKind.PLATE: "corning_96_wellplate_360ul_flat",
     LabwareKind.COLD_BLOCK: "opentrons_24_aluminumblock_nest_1.5ml_snapcap",
     LabwareKind.PCR_PLATE: "nest_96_wellplate_100ul_pcr_full_skirt",
     LabwareKind.TUBE_RACK: "opentrons_24_tuberack_eppendorf_1.5ml_safelock_snapcap",
@@ -422,7 +424,10 @@ def lower_deck(
     """Bind a deck to OT-2 or Flex labware, modules, and single-channel pipettes."""
     labware, taken = _bind_containers(deck, robot)
     thermocycler: Literal["thermocycler module", "thermocycler module gen2"] | None = None
-    if any(container.site == DeckSite.THERMOCYCLER for container in deck.containers):
+    if any(
+        isinstance(container, Container) and container.site == DeckSite.THERMOCYCLER
+        for container in deck.containers
+    ):
         thermocycler = "thermocycler module" if robot == "OT-2" else "thermocycler module gen2"
     if robot == "Flex":
         if "D1" in taken:
@@ -476,6 +481,10 @@ def _bind_containers(
     taken: set[str] = set()
     labware: dict[str, Labware] = {}
     for container in deck.containers:
+        if not isinstance(container, Container):
+            raise CompileError(
+                "An Opentrons preset needs DeckSite groups or an explicit DeckLayout."
+            )
         pool = _SITE_SLOTS[robot][container.site]
         index = counts.get(container.site, 0)
         if index >= len(pool):
@@ -500,3 +509,111 @@ def _open_slot(slots: tuple[str, ...], taken: set[str]) -> str:
         if slot not in taken:
             return slot
     raise CompileError("No open OT-2 slot for a tip rack")
+
+
+_LAYOUT_LABWARE = {
+    LabwareModel.CORNING_96_360_UL: "corning_96_wellplate_360ul_flat",
+    LabwareModel.NEST_12_RESERVOIR_15_ML: "nest_12_reservoir_15ml",
+    LabwareModel.NEST_96_PCR_100_UL: "nest_96_wellplate_100ul_pcr_full_skirt",
+    LabwareModel.OPENTRONS_96_PCR_200_UL: "opentrons_96_wellplate_200ul_pcr_full_skirt",
+    LabwareModel.BIORAD_96_PCR_200_UL: "biorad_96_wellplate_200ul_pcr",
+    LabwareModel.OPENTRONS_24_COLD_BLOCK: "opentrons_24_aluminumblock_nest_1.5ml_snapcap",
+    LabwareModel.OPENTRONS_24_TUBE_RACK: "opentrons_24_tuberack_eppendorf_1.5ml_safelock_snapcap",
+    LabwareModel.OPENTRONS_15_CONICAL_RACK: "opentrons_15_tuberack_falcon_15ml_conical",
+}
+_LAYOUT_TIPS = {
+    TipRackModel.OPENTRONS_20_UL: "opentrons_96_tiprack_20ul",
+    TipRackModel.OPENTRONS_300_UL: "opentrons_96_tiprack_300ul",
+    TipRackModel.FLEX_200_UL: "opentrons_flex_96_tiprack_200ul",
+}
+
+
+def lower_layout(layout: DeckLayout) -> Opentrons:
+    """Translate a Lab-owned layout; SDK names stay within this backend."""
+    robot: Literal["OT-2", "Flex"] = (
+        "OT-2" if layout.liquid_handler == LiquidHandler.OT2 else "Flex"
+    )
+    if layout.carriers or layout.channels or layout.external_thermal_resources:
+        raise CompileError(
+            f"{robot} does not support carriers, independent channels, "
+            "or external thermal handoffs."
+        )
+    if not 1 <= len(layout.pipettes) <= (2 if robot == "OT-2" else 1):
+        raise CompileError(
+            f"Configure one {'or two pipettes' if robot == 'OT-2' else 'pipette'} for {robot}."
+        )
+    assigned_tips = [rack for pipette in layout.pipettes for rack in pipette.tip_racks]
+    if len(set(assigned_tips)) != len(assigned_tips):
+        raise CompileError("The Opentrons backend requires separate tip racks for each pipette.")
+    thermocycler: Literal["thermocycler module", "thermocycler module gen2"] | None = None
+    thermal_holder: str | None = None
+    temperatures: dict[str, Literal["temperature module", "temperature module gen2"]] = {}
+    module_slots: dict[str, str] = {}
+    for module in layout.modules:
+        if not isinstance(module.location, Slot):
+            raise CompileError(f"{robot} modules require a Slot location.")
+        module_slots[module.id] = module.location.name
+        if module.model in (ModuleModel.THERMOCYCLER_GEN1, ModuleModel.THERMOCYCLER_GEN2):
+            if thermal_holder is not None:
+                raise CompileError(f"The {robot} backend supports one thermocycler.")
+            anchor = "7" if robot == "OT-2" else "A1"
+            if module.location.name != anchor:
+                raise CompileError(f"The {robot} thermocycler must be anchored in slot {anchor}.")
+            thermal_holder = module.id
+            thermocycler = (
+                "thermocycler module"
+                if module.model == ModuleModel.THERMOCYCLER_GEN1
+                else "thermocycler module gen2"
+            )
+        else:
+            if robot == "Flex" and module.model != ModuleModel.TEMPERATURE_GEN2:
+                raise CompileError("Flex requires a GEN2 temperature module.")
+            temperatures[module.id] = (
+                "temperature module"
+                if module.model == ModuleModel.TEMPERATURE_GEN1
+                else "temperature module gen2"
+            )
+    labware: dict[str, Labware] = {}
+    used_modules: set[str] = set()
+    for placement in layout.placements:
+        load_name = _LAYOUT_LABWARE.get(placement.model)
+        if load_name is None:
+            raise CompileError(f"{robot} does not support labware model {placement.model.value}.")
+        location = placement.location
+        module_name = None
+        if isinstance(location, Slot):
+            slot = location.name
+        elif isinstance(location, HolderSite) and location.holder in module_slots:
+            used_modules.add(location.holder)
+            slot = (
+                "thermocycler"
+                if location.holder == thermal_holder
+                else module_slots[location.holder]
+            )
+            module_name = temperatures.get(location.holder)
+        else:
+            raise CompileError(f"{robot} labware requires a Slot or module HolderSite.")
+        labware[placement.container] = Labware(
+            load_name, slot, wells=placement.wells, module=module_name
+        )
+    if used_modules != set(module_slots):
+        raise CompileError("Every configured Opentrons module must hold a container.")
+    racks: dict[str, Labware] = {}
+    for rack in layout.tip_racks:
+        load_name = _LAYOUT_TIPS.get(rack.model)
+        if load_name is None or not isinstance(rack.location, Slot):
+            raise CompileError(f"{robot} requires supported tip racks placed in Slots.")
+        racks[rack.id] = Labware(load_name, rack.location.name)
+    primary = layout.pipettes[0]
+    secondary = layout.pipettes[1] if len(layout.pipettes) == 2 else None
+    return Opentrons(
+        robot=robot,
+        labware=labware,
+        pipette=primary.model.value,
+        mount="left" if primary.mount.value == "left" else "right",
+        tip_racks=tuple(racks[name] for name in primary.tip_racks),
+        thermocycler=thermocycler,
+        small_pipette=secondary.model.value if secondary else None,
+        small_mount="left" if secondary and secondary.mount.value == "left" else "right",
+        small_tip_racks=tuple(racks[name] for name in secondary.tip_racks) if secondary else (),
+    )

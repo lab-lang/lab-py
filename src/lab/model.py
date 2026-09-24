@@ -2,6 +2,7 @@
 
 from dataclasses import asdict, dataclass
 from decimal import Decimal
+from enum import Enum
 from typing import Any
 
 from lab.units import number
@@ -145,6 +146,8 @@ def encode(value: Any) -> Any:
     """JSON-compatible data for the small, closed vocabulary."""
     if isinstance(value, Decimal):
         return number(value)
+    if isinstance(value, Enum):
+        return value.value
     if isinstance(value, (tuple, list)):
         return [encode(item) for item in value]
     if isinstance(value, dict):

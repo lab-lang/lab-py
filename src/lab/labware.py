@@ -6,6 +6,8 @@ from enum import Enum
 
 
 class LabwareKind(Enum):
+    PLATE = "plate"
+    RESERVOIR = "reservoir"
     COLD_BLOCK = "cold_block"
     PCR_PLATE = "pcr_plate"
     TUBE_RACK = "tube_rack"
@@ -57,6 +59,7 @@ class ContainerSpec:
 COLD_BLOCK_24 = LabwareSpec(
     kind=LabwareKind.COLD_BLOCK, rows=4, columns=6, capacity_ul=Decimal(1500)
 )
+PLATE_96 = LabwareSpec(kind=LabwareKind.PLATE, rows=8, columns=12, capacity_ul=Decimal(360))
 PCR_PLATE_96 = LabwareSpec(kind=LabwareKind.PCR_PLATE, rows=8, columns=12, capacity_ul=Decimal(100))
 TUBE_RACK_24 = LabwareSpec(kind=LabwareKind.TUBE_RACK, rows=4, columns=6, capacity_ul=Decimal(1500))
 CONICAL_RACK_15 = LabwareSpec(

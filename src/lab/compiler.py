@@ -2,7 +2,7 @@
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -15,7 +15,7 @@ from lab.model import Distribute, Location, Mix, RecordedProtocol, TargetPlan, T
 from lab.protocol import Protocol
 from lab.targets.liquid_handler import LiquidHandler
 from lab.targets.lower import lower_deck
-from lab.validation import logical_bindings, validate
+from lab.validation import CompileError, logical_bindings, validate
 
 
 class Target(Interface):
@@ -88,10 +88,12 @@ def compile(
 ) -> Compilation:
     """Compile offline for one piece of hardware.
 
-    A ``Deck`` is lowered for ``liquid_handler`` into that robot's labware, modules, and
-    pipettes. Robot hardware names its ``LiquidHandler``; pass that same member.
+    A ``Deck`` contains shared requirements and optional Lab-owned layouts. The
+    selected backend validates and translates its layout or supported preset.
+    Concrete backend targets are also accepted for low-level integrations.
     A document target such as ``Manual()`` has no robot, so ``liquid_handler`` is omitted.
     """
+    authored_deck = hardware if isinstance(hardware, Deck) else None
     if isinstance(hardware, Deck):
         if not isinstance(liquid_handler, LiquidHandler):
             raise TypeError(
@@ -100,6 +102,15 @@ def compile(
         liquid = tuple(
             step.volume for step in protocol.steps if isinstance(step, (Transfer, Mix, Distribute))
         )
+        requirements = {container.id: container.labware for container in hardware.containers}
+        for resource in protocol.snapshot().resources:
+            spec = requirements.get(resource.name)
+            if spec is None or (spec.rows, spec.columns) != (resource.rows, resource.columns):
+                raise CompileError(
+                    f"Deck requirements must match the protocol geometry for {resource.name}."
+                )
+            if resource.capacity > spec.capacity_ul:
+                raise CompileError(f"Protocol capacity exceeds the deck limit for {resource.name}.")
         hardware = lower_deck(hardware, liquid_handler, liquid)
     declared = getattr(hardware, "liquid_handler", None)
     if isinstance(declared, LiquidHandler) and liquid_handler != declared:
@@ -114,5 +125,9 @@ def compile(
     recorded = protocol.snapshot()
     validate(recorded, logical_bindings(recorded))
     prepared = hardware.prepare(recorded)
+    if authored_deck is not None:
+        configuration = json.loads(prepared.configuration_json)
+        configuration["lab_deck"] = encode(authored_deck)
+        prepared = replace(prepared, configuration_json=json.dumps(configuration, sort_keys=True))
     volumes = validate(recorded, prepared.bindings)
     return Compilation(recorded, prepared, tuple(volumes.items()))

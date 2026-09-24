@@ -5,8 +5,11 @@ from decimal import Decimal
 
 import pytest
 
+from lab import CompileError, Protocol, compile, seconds
 from lab.deck import Container, Deck, DeckSite
 from lab.labware import COLD_BLOCK_24, PCR_PLATE_96, TUBE_RACK_24, ContainerSpec
+from lab.targets import LiquidHandler
+from lab.targets.lower import lower_deck
 
 
 def test_specifications_are_reusable_and_immutable():
@@ -74,12 +77,12 @@ def test_placement_rejects_incompatible_labware(labware, site):
         Container(id="samples", labware=labware, site=site)
 
 
-def test_deck_requires_immutable_placed_containers():
+def test_deck_accepts_shared_container_specs_in_an_immutable_collection():
     placed = Container(id="samples", labware=PCR_PLATE_96, site=DeckSite.PLATES)
-    with pytest.raises(TypeError, match="tuple of placed Container"):
+    with pytest.raises(TypeError, match="tuple of ContainerSpec"):
         Deck(containers=[placed])
-    with pytest.raises(TypeError, match="tuple of placed Container"):
-        Deck(containers=(ContainerSpec(id="samples", labware=PCR_PLATE_96),))
+    unplaced = ContainerSpec(id="samples", labware=PCR_PLATE_96)
+    assert Deck(containers=(unplaced,)).containers == (unplaced,)
     with pytest.raises(ValueError, match="at least one"):
         Deck(containers=())
 
@@ -94,11 +97,27 @@ def test_deck_rejects_duplicate_ids_even_at_different_sites():
     "labware, site",
     [(COLD_BLOCK_24, DeckSite.TEMPERATURE_MODULE), (PCR_PLATE_96, DeckSite.THERMOCYCLER)],
 )
-def test_deck_rejects_multiple_containers_on_one_thermal_module(labware, site):
-    with pytest.raises(ValueError, match="A deck has one"):
-        Deck(
-            containers=(
-                Container(id="first", labware=labware, site=site),
-                Container(id="second", labware=labware, site=site),
-            )
+def test_shared_deck_does_not_assume_one_thermal_device(labware, site):
+    deck = Deck(
+        containers=(
+            Container(id="first", labware=labware, site=site),
+            Container(id="second", labware=labware, site=site),
         )
+    )
+    assert len(deck.containers) == 2
+
+
+@pytest.mark.parametrize("entrypoint", ["lower", "compile"])
+def test_star_cold_block_preset_requires_lab_equipment_configuration(entrypoint):
+    deck = Deck(
+        containers=(
+            Container(id="samples", labware=COLD_BLOCK_24, site=DeckSite.TEMPERATURE_MODULE),
+        )
+    )
+    protocol = Protocol("Deck configuration check")
+    protocol.wait(1 * seconds)
+    with pytest.raises(CompileError, match="No STAR preset.*Lab DeckLayout"):
+        if entrypoint == "lower":
+            lower_deck(deck, LiquidHandler.STAR)
+        else:
+            compile(protocol, deck, liquid_handler=LiquidHandler.STAR)

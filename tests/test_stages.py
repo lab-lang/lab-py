@@ -155,8 +155,8 @@ def test_compiling_a_deck_requires_a_liquid_handler():
         lab.compile(protocol, assembly_deck(), liquid_handler="ot2")  # type: ignore[arg-type]
 
 
-def test_cloning_decks_lower_to_the_same_containers_for_every_liquid_handler():
-    for liquid_handler in LiquidHandler:
+def test_cloning_deck_presets_lower_to_the_same_containers_for_opentrons():
+    for liquid_handler in (LiquidHandler.OT2, LiquidHandler.FLEX):
         assert set(lower_deck(assembly_deck(), liquid_handler).labware) == {"reagents", "products"}
         assert set(lower_deck(transformation_deck(), liquid_handler).labware) == {
             "dna",
@@ -217,16 +217,13 @@ def test_ot2_lowering_uses_the_cloning_slots():
     assert plating.labware["sources"].load_name == "biorad_96_wellplate_200ul_pcr"
 
 
-def test_assembly_compiles_on_a_hamilton_star():
-    pytest.importorskip("pylabrobot")
-    compiled = ProtocolCompiler().compile(
-        AssemblyRequest(id="sbol-loop-assembly", reactions=ASSEMBLY_REACTIONS),
-        hardware=assembly_deck(),
-        liquid_handler=LiquidHandler.STAR,
-    )
-    source = compiled.files["protocol.py"]
-    assert "LiquidHandler" in source
-    assert "thermocycle" in source
+def test_protocol_compiler_rejects_unsupported_star_preset_equipment():
+    with pytest.raises(lab.CompileError, match="No STAR preset.*Lab DeckLayout"):
+        ProtocolCompiler().compile(
+            AssemblyRequest(id="sbol-loop-assembly", reactions=ASSEMBLY_REACTIONS),
+            hardware=assembly_deck(),
+            liquid_handler=LiquidHandler.STAR,
+        )
 
 
 def test_chained_plan_compiles_and_conserves_volume():
