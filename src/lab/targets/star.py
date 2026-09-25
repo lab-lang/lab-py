@@ -83,7 +83,7 @@ class STAR:
     def prepare(self, protocol: RecordedProtocol) -> TargetPlan:
         if _sdk_import_error is not None:
             raise ImportError(
-                "Install lab-python[star] to compile for Hamilton STAR"
+                "Install lab-compiler[star] to compile for Hamilton STAR"
             ) from _sdk_import_error
         if not isinstance(self.deck, HamiltonSTARDeck):
             raise CompileError("STAR requires a PyLabRobot STARDeck or STARLetDeck")
@@ -366,7 +366,7 @@ def lower_layout(deck: Deck, layout: DeckLayout) -> STAR:
     """Build the PyLabRobot resource tree from Lab-owned equipment and placements."""
     if _sdk_import_error is not None:
         raise ImportError(
-            "Install lab-python[star] to compile for Hamilton STAR"
+            "Install lab-compiler[star] to compile for Hamilton STAR"
         ) from _sdk_import_error
     if layout.pipettes:
         raise CompileError("STAR layouts configure independent Channel objects.")

@@ -79,7 +79,7 @@ class Opentrons:
     def prepare(self, protocol: RecordedProtocol) -> TargetPlan:
         if _sdk_import_error is not None:
             raise ImportError(
-                "Install lab-python[opentrons] to compile for Opentrons"
+                "Install lab-compiler[opentrons] to compile for Opentrons"
             ) from _sdk_import_error
 
         models: dict[str, tuple[str, int, int, str]] = {

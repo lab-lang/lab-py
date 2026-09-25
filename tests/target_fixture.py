@@ -65,7 +65,7 @@ def target(name: str, *, thermal: bool = False) -> Target:
     if name == "star":
         if _star_import_error is not None:
             raise ImportError(
-                "Install lab-python[star] to use the STAR test fixture"
+                "Install lab-compiler[star] to use the STAR test fixture"
             ) from _star_import_error
         deck = STARDeck()
         tips = hamilton_96_tiprack_1000uL_filter(name="tips")
