@@ -52,16 +52,53 @@ compiled.write("build/transformation")
 
 ## Describe a deck
 
-`LabwareSpec` defines a labware kind, geometry, and logical capacity per well. `ContainerSpec` gives that specification a protocol id. These specifications are independent of the robot. `Container` adds a `DeckSite` placement group for the built-in presets.
+This OT-2 deck places two 96-well plates in slots 1 and 2, a 300 µL tip rack in slot 3, and a P300 pipette on the left mount. It uses the same equipment and placement types as the [deck layouts example](examples/deck_layouts.py).
 
 ```python
-from lab.deck import Container, Deck, DeckSite
-from lab.labware import PCR_PLATE_96
+from lab.deck import Deck, DeckLayout, Pipette, Placement, Slot, TipRack
+from lab.equipment import LabwareModel, LiquidHandler, Mount, PipetteModel, TipRackModel
+from lab.labware import PLATE_96, ContainerSpec
 
-deck = Deck(containers=(Container(id="samples", labware=PCR_PLATE_96, site=DeckSite.PLATES),))
+deck = Deck(
+    containers=(
+        ContainerSpec(id="sources", labware=PLATE_96),
+        ContainerSpec(id="assay", labware=PLATE_96),
+    ),
+    layouts=(
+        DeckLayout(
+            liquid_handler=LiquidHandler.OT2,
+            placements=(
+                Placement(
+                    container="sources",
+                    model=LabwareModel.CORNING_96_360_UL,
+                    location=Slot("1"),
+                ),
+                Placement(
+                    container="assay",
+                    model=LabwareModel.CORNING_96_360_UL,
+                    location=Slot("2"),
+                ),
+            ),
+            tip_racks=(
+                TipRack(
+                    id="tips",
+                    model=TipRackModel.OPENTRONS_300_UL,
+                    location=Slot("3"),
+                ),
+            ),
+            pipettes=(
+                Pipette(
+                    model=PipetteModel.P300_SINGLE_GEN2,
+                    mount=Mount.LEFT,
+                    tip_racks=("tips"),
+                ),
+            ),
+        ),
+    ),
+)
 ```
 
-This ambient plate preset can compile for OT-2, Flex, or STAR. `DeckSite` groups express the role of a container; they are not physical slot or carrier coordinates. The STAR preset supports up to ten ambient plates using plate carriers and one tip rack. Equipment outside a supported preset needs a Lab `DeckLayout`. In particular, cold blocks and tube racks are never silently converted into ordinary plates for STAR.
+The container ids, `sources` and `assay`, match the names used by the protocol. `DeckLayout` assigns each container a physical model and position, and connects the pipette to its tip rack. A deck can include additional layouts for Flex or STAR using the same container ids.
 
 ## Describe physical layouts in Lab
 
