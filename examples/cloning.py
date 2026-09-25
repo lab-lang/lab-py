@@ -9,8 +9,10 @@ from lab.experiments.cloning import (
     transformation_deck,
 )
 from lab.protocols import (
+    BSAI,
     AssemblyReaction,
     AssemblyRequest,
+    Part,
     PlatingRequest,
     ProtocolCompiler,
     TransformationReaction,
@@ -18,22 +20,21 @@ from lab.protocols import (
 )
 from lab.targets import LiquidHandler, Manual
 
-PSB1C3 = "https://sbolcanvas.org/pSB1C3/1"
-J23101 = "https://sbolcanvas.org/J23101/1"
-J23106 = "https://sbolcanvas.org/J23106/1"
-B0034 = "https://sbolcanvas.org/B0034/1"
-GFP = "https://sbolcanvas.org/GFP/1"
-RFP = "https://sbolcanvas.org/RFP/1"
-B0015 = "https://sbolcanvas.org/B0015/1"
-BSAI = "https://SBOL2Build.org/BsaI/1"
-DH5ALPHA = "https://sbolcanvas.org/DH5alpha/1"
-BL21 = "https://sbolcanvas.org/BL21/1"
-PLASMID_1 = "https://SBOL2Build.org/composite_plasmid_1/1"
-PLASMID_2 = "https://SBOL2Build.org/composite_plasmid_2/1"
-STRAIN_1 = "https://SBOL2Build.org/composite_strain_1/1"
-STRAIN_2 = "https://SBOL2Build.org/composite_strain_2/1"
-STRAIN_3 = "https://SBOL2Build.org/composite_strain_3/1"
-STRAIN_4 = "https://SBOL2Build.org/composite_strain_4/1"
+PSB1C3 = Part("https://sbolcanvas.org/pSB1C3/1")
+J23101 = Part("https://sbolcanvas.org/J23101/1")
+J23106 = Part("https://sbolcanvas.org/J23106/1")
+B0034 = Part("https://sbolcanvas.org/B0034/1")
+GFP = Part("https://sbolcanvas.org/GFP/1")
+RFP = Part("https://sbolcanvas.org/RFP/1")
+B0015 = Part("https://sbolcanvas.org/B0015/1")
+DH5ALPHA = Part("https://sbolcanvas.org/DH5alpha/1")
+BL21 = Part("https://sbolcanvas.org/BL21/1")
+PLASMID_1 = Part("https://SBOL2Build.org/composite_plasmid_1/1")
+PLASMID_2 = Part("https://SBOL2Build.org/composite_plasmid_2/1")
+STRAIN_1 = Part("https://SBOL2Build.org/composite_strain_1/1")
+STRAIN_2 = Part("https://SBOL2Build.org/composite_strain_2/1")
+STRAIN_3 = Part("https://SBOL2Build.org/composite_strain_3/1")
+STRAIN_4 = Part("https://SBOL2Build.org/composite_strain_4/1")
 
 ASSEMBLIES = (
     AssemblyReaction(

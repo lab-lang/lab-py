@@ -10,8 +10,10 @@ from lab.protocols.compiler import CompiledProtocol, ProtocolCompiler
 from lab.protocols.plans import ProtocolPlan
 from lab.protocols.program import Call, Program
 from lab.protocols.requests import (
+    BSAI,
     AssemblyReaction,
     AssemblyRequest,
+    Part,
     PlatingRequest,
     TransformationReaction,
     TransformationRequest,
@@ -20,8 +22,10 @@ from lab.protocols.requests import (
 __all__ = [
     "AssemblyReaction",
     "AssemblyRequest",
+    "BSAI",
     "Call",
     "CompiledProtocol",
+    "Part",
     "Program",
     "OutputManifest",
     "PlatingRequest",

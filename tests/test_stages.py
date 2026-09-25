@@ -18,8 +18,10 @@ from lab.experiments.cloning import (
 )
 from lab.experiments.cloning.addresses import well_name
 from lab.protocols import (
+    BSAI,
     AssemblyReaction,
     AssemblyRequest,
+    Part,
     PlatingRequest,
     ProtocolCompiler,
     TransformationReaction,
@@ -123,9 +125,9 @@ def test_transformation_uses_caller_defined_materials():
         reactions=(
             TransformationReaction(
                 id="custom-reaction",
-                strain="custom-strain",
-                chassis="custom-cells",
-                plasmids=["custom-plasmid"],
+                strain=Part("https://example.org/custom-strain/1"),
+                chassis=Part("https://example.org/custom-cells/1"),
+                plasmids=[Part("https://example.org/custom-plasmid/1")],
             ),
         ),
     )
@@ -141,47 +143,47 @@ def test_transformation_uses_caller_defined_materials():
     )
 
 
-def test_assembly_accepts_plasmid_identity_strings():
-    product = "https://vsv.bio/rvsv_dg_outbreak_gp/plasmid"
+def test_assembly_accepts_sbol_parts():
+    product = Part("https://vsv.bio/rvsv_dg_outbreak_gp/plasmid")
+    insert = Part("https://vsv.bio/rvsv_dg_outbreak_gp/GP")
     reaction = AssemblyReaction(
         id="rvsv_dg_outbreak_gp-assembly",
         product=product,
-        backbone="https://vsv.bio/backbone/pvsv-dg",
-        parts=["https://vsv.bio/rvsv_dg_outbreak_gp/GP"],
-        restriction_enzyme="https://SBOL2Build.org/BsaI/1",
+        backbone=Part("https://vsv.bio/backbone/pvsv-dg"),
+        parts=[insert],
+        restriction_enzyme=BSAI,
     )
-    assert reaction.parts == ("https://vsv.bio/rvsv_dg_outbreak_gp/GP",)
+    assert reaction.parts == (insert,)
     compiled = ProtocolCompiler().compile(
         AssemblyRequest(id="rvsv_dg_outbreak_gp", reactions=(reaction,)),
         hardware=Manual(),
     )
-    assert compiled.manifest.plasmid_locations()[product] == ["A1"]
+    assert compiled.manifest.plasmid_locations()[product.iri] == ["A1"]
     assert any(sample.label == "Restriction Enzyme BsaI" for sample in compiled.plan.samples)
 
 
-def test_reactions_reject_empty_identities_and_a_bare_string_of_parts():
-    with pytest.raises(ValueError, match="Product"):
+def test_part_iri_and_part_sequence_are_checked():
+    assert Part("https://sbolcanvas.org/GFP/1").iri == "https://sbolcanvas.org/GFP/1"
+    with pytest.raises(ValueError, match="Part IRI"):
+        Part("GFP")
+    with pytest.raises(ValueError, match="Part IRI"):
+        Part("ATGCTAA")
+    plasmid = Part("https://SBOL2Build.org/composite_plasmid_1/1")
+    with pytest.raises(TypeError, match="Parts"):
         AssemblyReaction(
             id="assembly",
-            product="",
-            backbone="backbone",
-            parts=["insert"],
-            restriction_enzyme="enzyme",
+            product=plasmid,
+            backbone=plasmid,
+            parts="https://sbolcanvas.org/GFP/1",
+            restriction_enzyme=BSAI,
         )
-    with pytest.raises(ValueError, match="Parts"):
-        AssemblyReaction(
-            id="assembly",
-            product="product",
-            backbone="backbone",
-            parts="insert",
-            restriction_enzyme="enzyme",
-        )
-    with pytest.raises(ValueError, match="Plasmids"):
+    strain = Part("https://example.org/custom-strain/1")
+    with pytest.raises(TypeError, match="Plasmids"):
         TransformationReaction(
             id="transformation",
-            strain="strain",
-            chassis="chassis",
-            plasmids="plasmid",
+            strain=strain,
+            chassis=strain,
+            plasmids="https://example.org/custom-plasmid/1",
         )
 
 

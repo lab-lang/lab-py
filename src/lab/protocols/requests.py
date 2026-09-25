@@ -2,36 +2,58 @@
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 
-def _identity(value: object, *, name: str) -> None:
-    if not isinstance(value, str) or not value:
-        raise ValueError(f"{name} must be a nonempty identity.")
+@dataclass(frozen=True, slots=True)
+class Part:
+    """An SBOL part identity."""
+
+    iri: str
+
+    def __post_init__(self) -> None:
+        parsed = urlsplit(self.iri)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.netloc
+            or not parsed.path.strip("/")
+        ):
+            raise ValueError(f"Part IRI must be an absolute http(s) URI, got {self.iri!r}.")
 
 
-def _identities(values: object, *, name: str) -> tuple[str, ...]:
-    if isinstance(values, str) or not isinstance(values, Sequence) or not values:
-        raise ValueError(f"{name} must be a nonempty sequence of identities.")
-    if not all(isinstance(value, str) and value for value in values):
-        raise ValueError(f"{name} must be nonempty identities.")
+BSAI = Part("https://SBOL2Build.org/BsaI/1")
+
+
+def _part(value: object, *, name: str) -> None:
+    if not isinstance(value, Part):
+        raise TypeError(f"{name} must be a Part.")
+
+
+def _parts(values: object, *, name: str) -> tuple[Part, ...]:
+    if isinstance(values, (str, Part)) or not isinstance(values, Sequence):
+        raise TypeError(f"{name} must be a sequence of parts.")
+    if not values:
+        raise ValueError(f"{name} must be a nonempty sequence of parts.")
+    if not all(isinstance(value, Part) for value in values):
+        raise TypeError(f"{name} must be parts.")
     return tuple(values)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class AssemblyReaction:
     id: str
-    product: str
-    backbone: str
-    parts: Sequence[str]
-    restriction_enzyme: str
+    product: Part
+    backbone: Part
+    parts: Sequence[Part]
+    restriction_enzyme: Part
 
     def __post_init__(self) -> None:
         if not self.id:
             raise ValueError("An assembly reaction requires an id.")
-        _identity(self.product, name="Product")
-        _identity(self.backbone, name="Backbone")
-        _identity(self.restriction_enzyme, name="Restriction enzyme")
-        object.__setattr__(self, "parts", _identities(self.parts, name="Parts"))
+        _part(self.product, name="Product")
+        _part(self.backbone, name="Backbone")
+        _part(self.restriction_enzyme, name="Restriction enzyme")
+        object.__setattr__(self, "parts", _parts(self.parts, name="Parts"))
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -52,16 +74,16 @@ class AssemblyRequest:
 @dataclass(frozen=True, slots=True, kw_only=True)
 class TransformationReaction:
     id: str
-    strain: str
-    chassis: str
-    plasmids: Sequence[str]
+    strain: Part
+    chassis: Part
+    plasmids: Sequence[Part]
 
     def __post_init__(self) -> None:
         if not self.id:
             raise ValueError("A transformation requires an id.")
-        _identity(self.strain, name="Strain")
-        _identity(self.chassis, name="Chassis")
-        object.__setattr__(self, "plasmids", _identities(self.plasmids, name="Plasmids"))
+        _part(self.strain, name="Strain")
+        _part(self.chassis, name="Chassis")
+        object.__setattr__(self, "plasmids", _parts(self.plasmids, name="Plasmids"))
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

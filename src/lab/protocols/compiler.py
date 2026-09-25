@@ -167,10 +167,10 @@ class ProtocolCompiler:
 def _assembly_rows(request: AssemblyRequest) -> list[dict[str, object]]:
     return [
         {
-            "Product": reaction.product,
-            "Backbone": reaction.backbone,
-            "PartsList": list(reaction.parts),
-            "Restriction Enzyme": reaction.restriction_enzyme,
+            "Product": reaction.product.iri,
+            "Backbone": reaction.backbone.iri,
+            "PartsList": [part.iri for part in reaction.parts],
+            "Restriction Enzyme": reaction.restriction_enzyme.iri,
         }
         for reaction in request.reactions
     ]
@@ -179,9 +179,9 @@ def _assembly_rows(request: AssemblyRequest) -> list[dict[str, object]]:
 def _strain_rows(request: TransformationRequest) -> list[dict[str, object]]:
     return [
         {
-            "Strain": reaction.strain,
-            "Chassis": reaction.chassis,
-            "Plasmids": list(reaction.plasmids),
+            "Strain": reaction.strain.iri,
+            "Chassis": reaction.chassis.iri,
+            "Plasmids": [plasmid.iri for plasmid in reaction.plasmids],
         }
         for reaction in request.reactions
     ]
