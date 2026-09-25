@@ -18,8 +18,8 @@ from lab.experiments.cloning import (
 )
 from lab.experiments.cloning.addresses import well_name
 from lab.protocols import (
+    AssemblyReaction,
     AssemblyRequest,
-    MaterialRef,
     PlatingRequest,
     ProtocolCompiler,
     TransformationReaction,
@@ -123,22 +123,66 @@ def test_transformation_uses_caller_defined_materials():
         reactions=(
             TransformationReaction(
                 id="custom-reaction",
-                strain=MaterialRef(identity="custom-strain", label="Custom strain"),
-                chassis=MaterialRef(identity="custom-cells", label="Custom cells"),
-                plasmids=(MaterialRef(identity="custom-plasmid", label="Custom plasmid"),),
+                strain="custom-strain",
+                chassis="custom-cells",
+                plasmids=["custom-plasmid"],
             ),
         ),
     )
     compiled = ProtocolCompiler().compile(request, hardware=Manual())
     assert compiled.manifest.protocol_id == request.id
-    assert {sample.material.identity for sample in compiled.manifest.samples} == {"custom-strain"}
+    assert {sample.material_identity for sample in compiled.manifest.samples} == {"custom-strain"}
     assert {
-        sample.material.identity for sample in compiled.plan.samples if sample.role == "dna"
+        sample.material_identity for sample in compiled.plan.samples if sample.role == "dna"
     } == {"custom-plasmid"}
     assert all(
         sample.contents[:3] == ("custom-strain", "Competent_Cell_custom-cells", "custom-plasmid")
         for sample in compiled.manifest.samples
     )
+
+
+def test_assembly_accepts_plasmid_identity_strings():
+    product = "https://vsv.bio/rvsv_dg_outbreak_gp/plasmid"
+    reaction = AssemblyReaction(
+        id="rvsv_dg_outbreak_gp-assembly",
+        product=product,
+        backbone="https://vsv.bio/backbone/pvsv-dg",
+        parts=["https://vsv.bio/rvsv_dg_outbreak_gp/GP"],
+        restriction_enzyme="https://SBOL2Build.org/BsaI/1",
+    )
+    assert reaction.parts == ("https://vsv.bio/rvsv_dg_outbreak_gp/GP",)
+    compiled = ProtocolCompiler().compile(
+        AssemblyRequest(id="rvsv_dg_outbreak_gp", reactions=(reaction,)),
+        hardware=Manual(),
+    )
+    assert compiled.manifest.plasmid_locations()[product] == ["A1"]
+    assert any(sample.label == "Restriction Enzyme BsaI" for sample in compiled.plan.samples)
+
+
+def test_reactions_reject_empty_identities_and_a_bare_string_of_parts():
+    with pytest.raises(ValueError, match="Product"):
+        AssemblyReaction(
+            id="assembly",
+            product="",
+            backbone="backbone",
+            parts=["insert"],
+            restriction_enzyme="enzyme",
+        )
+    with pytest.raises(ValueError, match="Parts"):
+        AssemblyReaction(
+            id="assembly",
+            product="product",
+            backbone="backbone",
+            parts="insert",
+            restriction_enzyme="enzyme",
+        )
+    with pytest.raises(ValueError, match="Plasmids"):
+        TransformationReaction(
+            id="transformation",
+            strain="strain",
+            chassis="chassis",
+            plasmids="plasmid",
+        )
 
 
 @pytest.mark.parametrize("designs", [{}, {"assemblies": ASSEMBLIES}, {"strains": STRAINS}])

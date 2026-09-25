@@ -46,7 +46,6 @@ from lab.protocols.plans import ProtocolPlan
 from lab.protocols.program import Call, Program, Reference
 from lab.protocols.requests import (
     AssemblyRequest,
-    MaterialRef,
     PlatingRequest,
     ProtocolRequest,
     TransformationRequest,
@@ -168,10 +167,10 @@ class ProtocolCompiler:
 def _assembly_rows(request: AssemblyRequest) -> list[dict[str, object]]:
     return [
         {
-            "Product": reaction.product.identity,
-            "Backbone": reaction.backbone.identity,
-            "PartsList": [part.identity for part in reaction.parts],
-            "Restriction Enzyme": reaction.restriction_enzyme.identity,
+            "Product": reaction.product,
+            "Backbone": reaction.backbone,
+            "PartsList": list(reaction.parts),
+            "Restriction Enzyme": reaction.restriction_enzyme,
         }
         for reaction in request.reactions
     ]
@@ -180,9 +179,9 @@ def _assembly_rows(request: AssemblyRequest) -> list[dict[str, object]]:
 def _strain_rows(request: TransformationRequest) -> list[dict[str, object]]:
     return [
         {
-            "Strain": reaction.strain.identity,
-            "Chassis": reaction.chassis.identity,
-            "Plasmids": [plasmid.identity for plasmid in reaction.plasmids],
+            "Strain": reaction.strain,
+            "Chassis": reaction.chassis,
+            "Plasmids": list(reaction.plasmids),
         }
         for reaction in request.reactions
     ]
@@ -197,7 +196,8 @@ def _assembly_plan(
     for _index, material, volume in layout.stocks:
         sample = Sample(
             id=new("stock"),
-            material=MaterialRef(identity=f"stock:{material}", label=material),
+            material_identity=f"stock:{material}",
+            label=material,
             initial_volume_ul=volume,
             role="reagent",
         )
@@ -214,10 +214,8 @@ def _assembly_plan(
         )
         product = Sample(
             id=new("product"),
-            material=MaterialRef(
-                identity=reaction.product_key,
-                label=_label(reaction.product_key),
-            ),
+            material_identity=reaction.product_key,
+            label=_label(reaction.product_key),
             parent_ids=parents,
             role="product",
         )
@@ -329,7 +327,8 @@ def _transformation_plan(
             continue
         sample = Sample(
             id=new("dna"),
-            material=MaterialRef(identity=plasmid, label=plasmid),
+            material_identity=plasmid,
+            label=plasmid,
             initial_volume_ul=volume,
             role="dna",
         )
@@ -340,7 +339,8 @@ def _transformation_plan(
     for index, material, volume in layout.cell_stocks:
         sample = Sample(
             id=new("cells"),
-            material=MaterialRef(identity=f"cells:{material}", label=material),
+            material_identity=f"cells:{material}",
+            label=material,
             initial_volume_ul=volume,
             role="cells",
         )
@@ -351,7 +351,8 @@ def _transformation_plan(
     for index, material, volume in layout.media_stocks:
         sample = Sample(
             id=new("media"),
-            material=MaterialRef(identity=f"media:{material}", label=material),
+            material_identity=f"media:{material}",
+            label=material,
             initial_volume_ul=volume,
             role="media",
         )
@@ -364,7 +365,8 @@ def _transformation_plan(
             (
                 Sample(
                     id=new("reaction"),
-                    material=MaterialRef(identity=move.strain, label=move.strain),
+                    material_identity=move.strain,
+                    label=move.strain,
                     parent_ids=(cell_at[move.tube_index],),
                     role="reaction",
                     contents=layout.contents[well],
@@ -526,7 +528,8 @@ def _plating_plan(
     new = _Ids()
     broth = Sample(
         id=new("broth"),
-        material=MaterialRef(identity="liquid_broth", label="liquid_broth"),
+        material_identity="liquid_broth",
+        label="liquid_broth",
         initial_volume_ul=Decimal(10000),
         role="broth",
     )
@@ -541,7 +544,8 @@ def _plating_plan(
     for source in sources:
         dilution = Sample(
             id=new("dilution"),
-            material=MaterialRef(identity=f"dilution:{source.id}", label=source.material.label),
+            material_identity=f"dilution:{source.id}",
+            label=source.label,
             parent_ids=(broth.id, source.id),
             role="dilution",
             dilution=1,
@@ -557,7 +561,8 @@ def _plating_plan(
         )
         other = Sample(
             id=new("dilution"),
-            material=MaterialRef(identity=f"dilution-2:{source.id}", label=source.material.label),
+            material_identity=f"dilution-2:{source.id}",
+            label=source.label,
             parent_ids=(broth.id, dilution.id),
             role="dilution",
             dilution=2,
@@ -607,7 +612,8 @@ def _plating_plan(
         for dilution_index, dilution in ((1, first[index]), (2, second[index])):
             spot = Sample(
                 id=new("colony"),
-                material=source.material,
+                material_identity=source.material_identity,
+                label=source.label,
                 parent_ids=(dilution.id,),
                 role="colony",
                 contents=source.contents,

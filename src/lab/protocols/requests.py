@@ -1,31 +1,37 @@
 """Immutable method inputs. A request names materials; it does not assign wells."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
-class MaterialRef:
-    identity: str
-    label: str
+def _identity(value: object, *, name: str) -> None:
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{name} must be a nonempty identity.")
 
-    def __post_init__(self) -> None:
-        if not self.identity or not self.label:
-            raise ValueError("Material identity and label must be nonempty.")
+
+def _identities(values: object, *, name: str) -> tuple[str, ...]:
+    if isinstance(values, str) or not isinstance(values, Sequence) or not values:
+        raise ValueError(f"{name} must be a nonempty sequence of identities.")
+    if not all(isinstance(value, str) and value for value in values):
+        raise ValueError(f"{name} must be nonempty identities.")
+    return tuple(values)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class AssemblyReaction:
     id: str
-    product: MaterialRef
-    backbone: MaterialRef
-    parts: tuple[MaterialRef, ...]
-    restriction_enzyme: MaterialRef
+    product: str
+    backbone: str
+    parts: Sequence[str]
+    restriction_enzyme: str
 
     def __post_init__(self) -> None:
-        if not self.id or not self.parts:
-            raise ValueError("An assembly reaction requires an id and ordered parts.")
-        if not isinstance(self.parts, tuple):
-            raise TypeError("AssemblyReaction.parts must be a tuple.")
+        if not self.id:
+            raise ValueError("An assembly reaction requires an id.")
+        _identity(self.product, name="Product")
+        _identity(self.backbone, name="Backbone")
+        _identity(self.restriction_enzyme, name="Restriction enzyme")
+        object.__setattr__(self, "parts", _identities(self.parts, name="Parts"))
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -46,15 +52,16 @@ class AssemblyRequest:
 @dataclass(frozen=True, slots=True, kw_only=True)
 class TransformationReaction:
     id: str
-    strain: MaterialRef
-    chassis: MaterialRef
-    plasmids: tuple[MaterialRef, ...]
+    strain: str
+    chassis: str
+    plasmids: Sequence[str]
 
     def __post_init__(self) -> None:
-        if not self.id or not self.plasmids:
-            raise ValueError("A transformation requires an id and plasmids.")
-        if not isinstance(self.plasmids, tuple):
-            raise TypeError("Transformation plasmids must be a tuple.")
+        if not self.id:
+            raise ValueError("A transformation requires an id.")
+        _identity(self.strain, name="Strain")
+        _identity(self.chassis, name="Chassis")
+        object.__setattr__(self, "plasmids", _identities(self.plasmids, name="Plasmids"))
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

@@ -37,7 +37,6 @@ You define the strain, chassis, and plasmids. The library provides typed request
 ```python
 from lab.experiments.cloning import transformation_deck
 from lab.protocols import (
-    MaterialRef,
     ProtocolCompiler,
     TransformationReaction,
     TransformationRequest,
@@ -49,9 +48,9 @@ request = TransformationRequest(
     reactions=(
         TransformationReaction(
             id="reaction-1",
-            strain=MaterialRef(identity="my-strain", label="My strain"),
-            chassis=MaterialRef(identity="my-cells", label="My competent cells"),
-            plasmids=(MaterialRef(identity="my-plasmid", label="My plasmid"),),
+            strain="my-strain",
+            chassis="my-cells",
+            plasmids=["my-plasmid"],
         ),
     ),
 )
@@ -63,7 +62,7 @@ compiled = ProtocolCompiler().compile(
 compiled.write("build/transformation")
 ```
 
-`MaterialRef` carries your material's identity and display label. `TransformationReaction` associates an output strain with its chassis and plasmids. The compiler assigns wells and records the transfers, heat shock, and recovery steps. The result includes an output manifest for downstream stages. The [cloning example](https://github.com/the-lab-compiler/lab-py/blob/master/examples/cloning.py) defines its materials and reactions directly and links assembly, transformation, and plating.
+`TransformationReaction` names an output strain, its chassis, and its plasmids by identity. The compiler assigns wells and records the transfers, heat shock, and recovery steps. The result includes an output manifest for downstream stages. The [cloning example](https://github.com/the-lab-compiler/lab-py/blob/master/examples/cloning.py) defines its materials and reactions directly and links assembly, transformation, and plating.
 
 `transformation_deck(on_module=True)` names the 24-well DNA block, the cell tubes, and the reaction plate. This is an Opentrons preset; the example uses `LiquidHandler.OT2`. For a document with no robot, import `Manual` from `lab.targets` and use `ProtocolCompiler().compile(request, hardware=Manual())`.
 

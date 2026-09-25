@@ -12,7 +12,6 @@ from lab.protocols.program import Call, Program
 from lab.protocols.requests import (
     AssemblyReaction,
     AssemblyRequest,
-    MaterialRef,
     PlatingRequest,
     TransformationReaction,
     TransformationRequest,
@@ -23,7 +22,6 @@ __all__ = [
     "AssemblyRequest",
     "Call",
     "CompiledProtocol",
-    "MaterialRef",
     "Program",
     "OutputManifest",
     "PlatingRequest",

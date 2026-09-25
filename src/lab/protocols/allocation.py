@@ -47,8 +47,8 @@ class OutputManifest:
             "outputs": [
                 {
                     "sample_id": sample.id,
-                    "material_identity": sample.material.identity,
-                    "label": sample.material.label,
+                    "material_identity": sample.material_identity,
+                    "label": sample.label,
                     "parent_sample_ids": list(sample.parent_ids),
                     "replicate": sample.replicate,
                     "source_sample_id": sample.source_sample_id,
@@ -66,7 +66,7 @@ class OutputManifest:
             raise ValueError("A single-plate handoff cannot represent multiple containers.")
         result: dict[str, list[str]] = {}
         for sample in self.samples:
-            result.setdefault(sample.material.identity, []).append(locations[sample.id].well_name)
+            result.setdefault(sample.material_identity, []).append(locations[sample.id].well_name)
         return result
 
     def bacterium_locations(self) -> dict[str, list[str]]:
@@ -74,7 +74,7 @@ class OutputManifest:
             raise ValueError("A single-plate handoff cannot represent multiple containers.")
         locations = {placement.sample_id: placement.location for placement in self.placements}
         return {
-            locations[sample.id].well_name: list(sample.contents or (sample.material.label,))
+            locations[sample.id].well_name: list(sample.contents or (sample.label,))
             for sample in self.samples
         }
 

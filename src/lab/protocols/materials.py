@@ -3,13 +3,12 @@
 from dataclasses import dataclass
 from decimal import Decimal
 
-from lab.protocols.requests import MaterialRef
-
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Sample:
     id: str
-    material: MaterialRef
+    material_identity: str
+    label: str
     parent_ids: tuple[str, ...] = ()
     replicate: int | None = None
     initial_volume_ul: Decimal | None = None
