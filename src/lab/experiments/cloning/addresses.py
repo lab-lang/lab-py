@@ -11,10 +11,20 @@ def microliters(value: object) -> Decimal:
 
 
 def uri_name(uri: str) -> str:
-    """Name segment used by the OT-2 assembly and transformation protocols."""
-    if "/" in uri:
-        return uri.split("/")[-2]
-    return uri
+    """Name segment of a material URI.
+
+    A versioned identity such as ``https://sbolcanvas.org/pSB1C3/1`` uses the segment before
+    the version. An unversioned identity such as ``https://vsv.bio/backbone/pvsv-dg`` uses the
+    last segment.
+    """
+    parts = [part for part in uri.split("/") if part]
+    if parts and parts[0].endswith(":"):
+        parts = parts[1:]
+    if not parts:
+        return uri
+    if len(parts) >= 2 and parts[-1].isdigit():
+        return parts[-2]
+    return parts[-1]
 
 
 def well_at(plate: Plate, index: int) -> Well:
