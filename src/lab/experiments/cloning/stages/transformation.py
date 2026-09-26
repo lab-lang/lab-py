@@ -8,12 +8,14 @@ that already hold it, which is how an assembly plate is consumed.
 """
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from itertools import groupby
 
 from lab.experiments.cloning.addresses import microliters, uri_name, well_at, well_name
+from lab.experiments.cloning.types import TransformationRequest
 from lab.protocol import Plate, Protocol
+from lab.samples import OutputManifest, Sample
 from lab.units import celsius, minutes, uL
 
 _CELL_MIX = Decimal(50)
@@ -271,14 +273,33 @@ def record_transformation(
 
 
 def build_transformation(
-    transformation_data: Sequence[Mapping[str, object]],
+    transformation_data: TransformationRequest | Sequence[Mapping[str, object]],
     plasmid_locations: Mapping[str, Sequence[str]] | None = None,
     *,
+    inputs: OutputManifest | None = None,
     name: str = "Heat-shock transformation",
     load_dna: bool = True,
     **params: object,
-) -> tuple[Protocol, dict[str, tuple[str, ...]]]:
+) -> Protocol:
     """Standalone transformation. Set ``load_dna`` false when the DNA plate is already filled."""
+    if inputs is not None:
+        if plasmid_locations is not None:
+            raise ValueError("Pass either an input manifest or plasmid_locations.")
+        plasmid_locations = _plasmid_locations(inputs)
+    if isinstance(transformation_data, TransformationRequest):
+        if transformation_data.source_stage_id is not None and (
+            inputs is None or inputs.protocol_id != transformation_data.source_stage_id
+        ):
+            raise ValueError("The source stage id must match the input manifest.")
+        name = transformation_data.id
+        transformation_data = [
+            {
+                "Strain": transformation.strain.iri,
+                "Chassis": transformation.chassis.iri,
+                "Plasmids": [part.iri for part in transformation.plasmids],
+            }
+            for transformation in transformation_data.transformations
+        ]
     layout = layout_transformation(
         transformation_data,
         plasmid_locations,
@@ -296,7 +317,91 @@ def build_transformation(
             protocol.load(dna[well], material, volume=volume * uL)
     for index, material, volume in (*layout.cell_stocks, *layout.media_stocks):
         protocol.load(well_at(tubes, index), material, volume=volume * uL)
-    return protocol, record_transformation(protocol, layout, dna, tubes, products)
+    _declare_samples(protocol, layout, dna, tubes, products, inputs)
+    record_transformation(protocol, layout, dna, tubes, products)
+    return protocol
+
+
+def _plasmid_locations(manifest: OutputManifest) -> dict[str, list[str]]:
+    if len({placement.location.resource for placement in manifest.placements}) > 1:
+        raise ValueError("Transformation inputs must occupy a single source container.")
+    locations = {placement.sample_id: placement.location for placement in manifest.placements}
+    result: dict[str, list[str]] = {}
+    for sample in manifest.samples:
+        result.setdefault(sample.material_identity, []).append(locations[sample.id].well)
+    return result
+
+
+def _declare_samples(
+    protocol: Protocol,
+    layout: TransformationLayout,
+    dna: Plate,
+    tubes: Plate,
+    products: Plate,
+    inputs: OutputManifest | None,
+) -> None:
+    upstream = {} if inputs is None else {sample.id: sample for sample in inputs.samples}
+    by_well = (
+        {}
+        if inputs is None
+        else {
+            placement.location.well: upstream[placement.sample_id]
+            for placement in inputs.placements
+        }
+    )
+    dna_ids: dict[str, str] = {}
+    for well, material, _volume in layout.dna_stocks:
+        if well in dna_ids:
+            continue
+        sample = Sample(id=f"dna-{well}", material_identity=material, label=material, role="dna")
+        if inputs is not None:
+            source = by_well[well]
+            sample = replace(
+                source,
+                id=sample.id,
+                parent_ids=(),
+                role="dna",
+                source_sample_id=source.id,
+                source_protocol_id=inputs.protocol_id,
+            )
+        protocol.add_sample(sample, at=dna[well], is_input=True)
+        dna_ids[well] = sample.id
+    for role, stocks in (("cells", layout.cell_stocks), ("media", layout.media_stocks)):
+        for index, material, _volume in stocks:
+            protocol.add_sample(
+                Sample(
+                    id=f"{role}-{index}",
+                    material_identity=f"{role}:{material}",
+                    label=material,
+                    role=role,
+                ),
+                at=well_at(tubes, index),
+                is_input=True,
+            )
+    for cell in layout.cell_moves:
+        parents = [f"cells-{cell.tube_index}"]
+        parents.extend(
+            dna_ids[move.source_well]
+            for move in layout.dna_moves
+            if move.destination == cell.destination
+        )
+        parents.extend(
+            f"media-{move.tube_index}"
+            for move in layout.media_moves
+            if move.destination == cell.destination
+        )
+        protocol.add_sample(
+            Sample(
+                id=f"reaction-{cell.destination}",
+                material_identity=cell.strain,
+                label=cell.strain,
+                parent_ids=tuple(dict.fromkeys(parents)),
+                role="reaction",
+                contents=layout.contents[well_name(cell.destination)],
+            ),
+            at=well_at(products, cell.destination),
+            is_output=True,
+        )
 
 
 def _strains(

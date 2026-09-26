@@ -1,27 +1,9 @@
-"""Immutable method inputs. A request names materials; it does not assign wells."""
+"""Core cloning types: assembly designs, transformation designs, and stage inputs."""
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from urllib.parse import urlsplit
 
-
-@dataclass(frozen=True, slots=True)
-class Part:
-    """An SBOL part identity."""
-
-    iri: str
-
-    def __post_init__(self) -> None:
-        parsed = urlsplit(self.iri)
-        if (
-            parsed.scheme not in {"http", "https"}
-            or not parsed.netloc
-            or not parsed.path.strip("/")
-        ):
-            raise ValueError(f"Part IRI must be an absolute http(s) URI, got {self.iri!r}.")
-
-
-BSAI = Part("https://SBOL2Build.org/BsaI/1")
+from lab.part import Part
 
 
 def _part(value: object, *, name: str) -> None:
@@ -37,6 +19,9 @@ def _parts(values: object, *, name: str) -> tuple[Part, ...]:
     if not all(isinstance(value, Part) for value in values):
         raise TypeError(f"{name} must be parts.")
     return tuple(values)
+
+
+BSAI = Part("https://SBOL2Build.org/BsaI/1")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -60,7 +45,6 @@ class Assembly:
 class AssemblyRequest:
     id: str
     assemblies: tuple[Assembly, ...]
-    source_stage_id: str | None = None
 
     def __post_init__(self) -> None:
         if not self.id or not self.assemblies:
@@ -114,6 +98,3 @@ class PlatingRequest:
             raise ValueError("A plating request requires an id and a nonempty sample tuple.")
         if len(set(self.sample_ids)) != len(self.sample_ids):
             raise ValueError("Plating source sample ids must be unique.")
-
-
-ProtocolRequest = AssemblyRequest | TransformationRequest | PlatingRequest

@@ -6,7 +6,7 @@ import pytest
 
 import lab
 from lab import CompileError, Protocol, celsius, mL, seconds, uL
-from lab.model import Location
+from lab.samples import Location
 from lab.targets import Manual
 from lab.units import units
 from lab.validation import logical_bindings, volume_trace

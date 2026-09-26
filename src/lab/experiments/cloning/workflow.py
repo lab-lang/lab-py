@@ -1,6 +1,6 @@
 """Compose caller-supplied cloning designs into a manual plan.
 
-Robot workflows compile each stage separately with ``ProtocolCompiler`` and
+Robot workflows build and compile each stage separately with ``lab.compile`` and
 pass the output manifest to the next stage.
 """
 

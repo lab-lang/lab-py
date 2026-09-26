@@ -8,11 +8,13 @@ this record keeps the same well and volume.
 """
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 
 from lab.experiments.cloning.addresses import microliters, well_at
+from lab.experiments.cloning.types import PlatingRequest
 from lab.protocol import Plate, Protocol, Well
+from lab.samples import OutputManifest, Sample
 from lab.units import celsius, uL
 
 
@@ -100,8 +102,9 @@ def record_plating(
 
 
 def build_plating(
-    bacterium_locations: Mapping[str, object],
+    bacterium_locations: PlatingRequest | Mapping[str, object],
     *,
+    inputs: OutputManifest | None = None,
     name: str = "Plating",
     volume_total_reaction: object = 20 * uL,
     volume_lb: object = 10000 * uL,
@@ -113,6 +116,25 @@ def build_plating(
     max_colonies: int = 192,
 ) -> Protocol:
     """Standalone plating protocol. Source wells are the mapping's keys, in order."""
+    if isinstance(bacterium_locations, PlatingRequest):
+        request = bacterium_locations
+        if inputs is None:
+            raise ValueError("Plating requires a source manifest.")
+        if request.source_stage_id is not None and inputs.protocol_id != request.source_stage_id:
+            raise ValueError("The source stage id must match the input manifest.")
+        if set(request.sample_ids) != {sample.id for sample in inputs.samples}:
+            raise ValueError("Plating request samples must match the source manifest.")
+        name = request.id
+        samples = {sample.id: sample for sample in inputs.samples}
+        placements = {placement.sample_id: placement for placement in inputs.placements}
+        inputs = OutputManifest(
+            protocol_id=inputs.protocol_id,
+            samples=tuple(samples[sample_id] for sample_id in request.sample_ids),
+            placements=tuple(placements[sample_id] for sample_id in request.sample_ids),
+        )
+        bacterium_locations = _bacterium_locations(inputs)
+    elif inputs is not None:
+        raise ValueError("Pass a PlatingRequest when supplying an input manifest.")
     if not bacterium_locations:
         raise ValueError("bacterium_locations must be a non-empty dictionary")
     _volumes(
@@ -163,7 +185,82 @@ def build_plating(
         replicates=replicates,
         number_dilutions=number_dilutions,
     )
+    source_samples: list[Sample] = []
+    for index, (well, label) in enumerate(bacterium_locations.items()):
+        sample = Sample(
+            id=f"source-{index}",
+            material_identity=_label(label),
+            label=_label(label),
+            role="source",
+        )
+        if inputs is not None:
+            source = inputs.samples[index]
+            sample = replace(
+                source,
+                id=sample.id,
+                parent_ids=(),
+                source_sample_id=source.id,
+                source_protocol_id=inputs.protocol_id,
+            )
+        protocol.add_sample(sample, at=sources[str(well)], is_input=True)
+        source_samples.append(sample)
+    broth = Sample(id="broth", material_identity="liquid_broth", label="liquid_broth", role="broth")
+    protocol.add_sample(broth, at=well_at(broth_plate, 0), is_input=True)
+    dilution_series = _series(
+        _column_major(dilutions),
+        None if dilutions_2 is None else _column_major(dilutions_2),
+        len(source_samples),
+        number_dilutions,
+    )
+    spot_series = _series(
+        _column_major(agar),
+        None if agar_2 is None else _column_major(agar_2),
+        len(source_samples) * replicates,
+        number_dilutions,
+    )
+    for index, source in enumerate(source_samples):
+        parent = source.id
+        for dilution_index, (dilution_wells, spot_wells) in enumerate(
+            zip(dilution_series, spot_series, strict=True), start=1
+        ):
+            if dilution_wells is None or spot_wells is None:
+                continue
+            dilution = Sample(
+                id=f"dilution-{dilution_index}-{index}",
+                material_identity=f"dilution:{source.id}:{dilution_index}",
+                label=source.label,
+                parent_ids=(broth.id, parent),
+                role="dilution",
+                dilution=dilution_index,
+            )
+            protocol.add_sample(dilution, at=dilution_wells[index])
+            parent = dilution.id
+            for replicate in range(replicates):
+                protocol.add_sample(
+                    Sample(
+                        id=f"colony-{dilution_index}-{index}-{replicate}",
+                        material_identity=source.material_identity,
+                        label=source.label,
+                        parent_ids=(dilution.id,),
+                        role="colony",
+                        contents=source.contents,
+                        replicate=replicate + 1,
+                        dilution=dilution_index,
+                    ),
+                    at=spot_wells[index * replicates + replicate],
+                    is_output=True,
+                )
     return protocol
+
+
+def _bacterium_locations(manifest: OutputManifest) -> dict[str, list[str]]:
+    if len({placement.location.resource for placement in manifest.placements}) > 1:
+        raise ValueError("Plating inputs must occupy a single source container.")
+    locations = {placement.sample_id: placement.location for placement in manifest.placements}
+    return {
+        locations[sample.id].well: list(sample.contents or (sample.label,))
+        for sample in manifest.samples
+    }
 
 
 def _volumes(

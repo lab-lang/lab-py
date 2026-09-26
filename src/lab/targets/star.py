@@ -28,7 +28,6 @@ from lab.labware import LabwareKind
 from lab.model import (
     Binding,
     Distribute,
-    Location,
     ManualInstruction,
     Mix,
     RecordedProtocol,
@@ -39,6 +38,7 @@ from lab.model import (
     Wait,
     encode,
 )
+from lab.samples import Location
 from lab.targets.liquid_handler import LiquidHandler
 from lab.units import magnitude, number, uL
 from lab.validation import CompileError, step_error

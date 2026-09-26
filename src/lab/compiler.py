@@ -11,8 +11,9 @@ from typing import Protocol as Interface
 import lab.documents as documents
 from lab._version import __version__
 from lab.deck import Deck
-from lab.model import Distribute, Location, Mix, RecordedProtocol, TargetPlan, Transfer, encode
+from lab.model import Distribute, Mix, RecordedProtocol, TargetPlan, Transfer, encode
 from lab.protocol import Protocol
+from lab.samples import Location, OutputManifest
 from lab.targets.liquid_handler import LiquidHandler
 from lab.targets.lower import lower_deck
 from lab.validation import CompileError, logical_bindings, validate
@@ -31,6 +32,11 @@ class Compilation:
     protocol: RecordedProtocol
     target: TargetPlan
     final_volumes: tuple[tuple[Location, Decimal], ...]
+
+    @property
+    def manifest(self) -> OutputManifest:
+        """Planned outputs from the same snapshot that drives code and documents."""
+        return self.protocol.output_manifest()
 
     @property
     def plan_json(self) -> str:
@@ -65,6 +71,8 @@ class Compilation:
     @property
     def files(self) -> dict[str, str]:
         result = {"plan.json": self.plan_json, "protocol.html": documents.render(self)}
+        if self.protocol.output_sample_ids:
+            result["manifest.json"] = canonical_json(self.manifest.to_dict())
         if self.target.source is not None:
             result["protocol.py"] = self.target.source
         return result
@@ -75,7 +83,7 @@ class Compilation:
         files = self.files
         for name, text in files.items():
             path = directory / name
-            if path.exists() and path.read_text() != text:
+            if path.exists() and path.read_text(encoding="utf-8") != text:
                 raise FileExistsError(f"{path} already contains a different artifact")
         directory.mkdir(parents=True, exist_ok=True)
         for name, text in files.items():
@@ -93,6 +101,7 @@ def compile(
     Concrete backend targets are also accepted for low-level integrations.
     A document target such as ``Manual()`` has no robot, so ``liquid_handler`` is omitted.
     """
+    recorded = protocol.snapshot()
     authored_deck = hardware if isinstance(hardware, Deck) else None
     if isinstance(hardware, Deck):
         if not isinstance(liquid_handler, LiquidHandler):
@@ -100,10 +109,10 @@ def compile(
                 "Pass liquid_handler=LiquidHandler.OT2, LiquidHandler.FLEX, or LiquidHandler.STAR."
             )
         liquid = tuple(
-            step.volume for step in protocol.steps if isinstance(step, (Transfer, Mix, Distribute))
+            step.volume for step in recorded.steps if isinstance(step, (Transfer, Mix, Distribute))
         )
         requirements = {container.id: container.labware for container in hardware.containers}
-        for resource in protocol.snapshot().resources:
+        for resource in recorded.resources:
             spec = requirements.get(resource.name)
             if spec is None or (spec.rows, spec.columns) != (resource.rows, resource.columns):
                 raise CompileError(
@@ -122,7 +131,6 @@ def compile(
         raise TypeError("This hardware does not name a LiquidHandler.")
     if liquid_handler is not None and not isinstance(liquid_handler, LiquidHandler):
         raise TypeError("Pass LiquidHandler.OT2, LiquidHandler.FLEX, or LiquidHandler.STAR.")
-    recorded = protocol.snapshot()
     validate(recorded, logical_bindings(recorded))
     prepared = hardware.prepare(recorded)
     if authored_deck is not None:

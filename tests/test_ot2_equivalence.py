@@ -121,6 +121,20 @@ def _lab_source(protocol, deck) -> str:
     return lab.compile(protocol, deck, liquid_handler=LiquidHandler.OT2).files["protocol.py"]
 
 
+def _assert_product_locations(
+    protocol: lab.Protocol, expected: Mapping[str, Sequence[str]]
+) -> None:
+    outputs = protocol.snapshot().output_manifest()
+    locations = {placement.sample_id: placement.location for placement in outputs.placements}
+    assert {sample.material_identity for sample in outputs.samples} == set(expected)
+    for material, wells in expected.items():
+        assert [
+            locations[sample.id].well
+            for sample in outputs.samples
+            if sample.material_identity == material
+        ] == list(wells)
+
+
 @pytest.mark.integration
 @requires_robots
 def test_sbol_assembly_matches_pudu_transfers_profiles_and_wells(tmp_path):
@@ -132,7 +146,7 @@ def test_sbol_assembly_matches_pudu_transfers_profiles_and_wells(tmp_path):
             "Restriction Enzyme": "https://SBOL2Build.org/BsaI/1",
         }
     ]
-    protocol, products = build_assembly(assemblies, name="SBOL loop assembly")
+    protocol = build_assembly(assemblies, name="SBOL loop assembly")
     ours = _log(_lab_source(protocol, assembly_deck()), tmp_path)
     source = _protocol(
         "assemblies = "
@@ -148,7 +162,7 @@ def run(protocol: protocol_api.ProtocolContext):
     pudu = _log(source, tmp_path)
     assert _transfers(ours) == _transfers(pudu)
     assert _profiles(ours) == _profiles(pudu)
-    assert {key: [well.name for well in wells] for key, wells in products.items()} == _handoff(pudu)
+    _assert_product_locations(protocol, _handoff(pudu))
 
 
 @pytest.mark.integration
@@ -175,7 +189,7 @@ def run(protocol: protocol_api.ProtocolContext):
     ],
 )
 def test_other_assembly_formats_match_pudu(tmp_path, assemblies, factory):
-    protocol, products = build_assembly(assemblies, name=factory)
+    protocol = build_assembly(assemblies, name=factory)
     ours = _log(_lab_source(protocol, assembly_deck()), tmp_path)
     source = _protocol(
         "assemblies = "
@@ -191,7 +205,7 @@ def run(protocol: protocol_api.ProtocolContext):
     pudu = _log(source, tmp_path)
     assert _transfers(ours) == _transfers(pudu)
     assert _profiles(ours) == _profiles(pudu)
-    assert {key: [well.name for well in wells] for key, wells in products.items()} == _handoff(pudu)
+    _assert_product_locations(protocol, _handoff(pudu))
 
 
 @pytest.mark.integration
@@ -205,7 +219,7 @@ def test_heat_shock_matches_pudu_transfers_and_well_labels(tmp_path):
         }
     ]
     locations = {"https://SBOL2Build.org/composite_plasmid_1/1": ["A1"]}
-    protocol, contents = build_transformation(strains, locations, name="Heat-shock transformation")
+    protocol = build_transformation(strains, locations, name="Heat-shock transformation")
     ours = _log(_lab_source(protocol, transformation_deck()), tmp_path)
     source = _protocol(
         "strains = "
@@ -224,7 +238,11 @@ def run(protocol: protocol_api.ProtocolContext):
     )
     pudu = _log(source, tmp_path)
     assert _transfers(ours) == _transfers(pudu)
-    assert {well: list(labels) for well, labels in contents.items()} == _handoff(pudu)
+    outputs = protocol.snapshot().output_manifest()
+    locations = {placement.sample_id: placement.location for placement in outputs.placements}
+    assert {
+        locations[sample.id].well: list(sample.contents) for sample in outputs.samples
+    } == _handoff(pudu)
 
 
 @pytest.mark.integration

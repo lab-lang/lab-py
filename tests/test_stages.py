@@ -8,7 +8,16 @@ import lab
 from examples.cloning import ASSEMBLIES as CLONING_ASSEMBLIES
 from examples.cloning import STRAINS as CLONING_STRAINS
 from lab.experiments.cloning import (
+    BSAI,
+    Assembly,
+    AssemblyRequest,
+    PlatingRequest,
+    Transformation,
+    TransformationRequest,
     assembly_deck,
+    build_assembly,
+    build_plating,
+    build_transformation,
     golden_gate,
     layout_assembly,
     layout_transformation,
@@ -17,16 +26,9 @@ from lab.experiments.cloning import (
     transformation_deck,
 )
 from lab.experiments.cloning.addresses import well_name
-from lab.protocols import (
-    BSAI,
-    Assembly,
-    AssemblyRequest,
-    Part,
-    PlatingRequest,
-    ProtocolCompiler,
-    Transformation,
-    TransformationRequest,
-)
+from lab.model import Mix, Transfer
+from lab.part import Part
+from lab.samples import Location
 from lab.targets import Labware, LiquidHandler, Manual
 from lab.targets.lower import lower_deck
 from tests.cloning_fixture import ASSEMBLIES, STRAINS
@@ -87,36 +89,49 @@ def test_plating_stays_on_one_plate_until_a_half_is_full():
     assert plating_plates(49, 2, 1) == (True, True)
 
 
-def test_compiler_links_stages_with_a_manifest_not_a_deck_tuple():
-    compiler = ProtocolCompiler()
-    assembled = compiler.compile(
-        AssemblyRequest(id="sbol-loop-assembly", assemblies=CLONING_ASSEMBLIES), hardware=Manual()
+def test_builders_link_stages_through_the_compiled_snapshot():
+    assembled = lab.compile(
+        build_assembly(AssemblyRequest(id="sbol-loop-assembly", assemblies=CLONING_ASSEMBLIES)),
+        Manual(),
     )
-    assert assembled.manifest.plasmid_locations()[
-        "https://SBOL2Build.org/composite_plasmid_1/1"
-    ] == ["A1"]
-    assert any(call.method == "aspirate" for call in assembled.program.instructions)
-    transformed = compiler.compile(
-        TransformationRequest(id="heat-shock", transformations=CLONING_STRAINS),
-        inputs=assembled.manifest,
-        hardware=Manual(),
-    )
-    plated = compiler.compile(
-        PlatingRequest(
-            id="plating",
-            sample_ids=tuple(sample.id for sample in transformed.manifest.samples),
-            source_stage_id=transformed.manifest.protocol_id,
+    outputs = assembled.manifest
+    locations = {placement.sample_id: placement.location for placement in outputs.placements}
+    assert [
+        locations[sample.id]
+        for sample in outputs.samples
+        if sample.material_identity == "https://SBOL2Build.org/composite_plasmid_1/1"
+    ] == [Location("products", "A1")]
+    assert any(isinstance(step, Transfer) for step in assembled.protocol.steps)
+    transformed = lab.compile(
+        build_transformation(
+            TransformationRequest(id="heat-shock", transformations=CLONING_STRAINS),
+            inputs=assembled.manifest,
         ),
-        inputs=transformed.manifest,
-        hardware=Manual(),
+        Manual(),
+    )
+    plated = lab.compile(
+        build_plating(
+            PlatingRequest(
+                id="plating",
+                sample_ids=tuple(sample.id for sample in transformed.manifest.samples),
+                source_stage_id=transformed.manifest.protocol_id,
+            ),
+            inputs=transformed.manifest,
+        ),
+        Manual(),
     )
     assert plated.manifest.samples
-    assert {call.method for call in plated.program.instructions} >= {"aspirate", "mix"}
-    manual = compiler.compile(
-        AssemblyRequest(id="sbol-loop-assembly", assemblies=CLONING_ASSEMBLIES), hardware=Manual()
-    )
-    assert "protocol.html" in manual.files
-    assert "protocol.py" not in manual.files
+    assert {type(step) for step in plated.protocol.steps} >= {Transfer, Mix}
+    for compiled in (assembled, transformed, plated):
+        assert compiled.manifest == compiled.protocol.output_manifest()
+        assert "protocol.html" in compiled.files
+        assert "manifest.json" in compiled.files
+        assert "protocol.py" not in compiled.files
+    imported = [sample for sample in transformed.protocol.samples if sample.role == "dna"]
+    assert {sample.source_sample_id for sample in imported} == {
+        sample.id for sample in assembled.manifest.samples
+    }
+    assert {sample.source_protocol_id for sample in imported} == {assembled.manifest.protocol_id}
 
 
 def test_transformation_uses_caller_defined_materials():
@@ -131,11 +146,11 @@ def test_transformation_uses_caller_defined_materials():
             ),
         ),
     )
-    compiled = ProtocolCompiler().compile(request, hardware=Manual())
+    compiled = lab.compile(build_transformation(request), Manual())
     assert compiled.manifest.protocol_id == request.id
     assert {sample.material_identity for sample in compiled.manifest.samples} == {"custom-strain"}
     assert {
-        sample.material_identity for sample in compiled.plan.samples if sample.role == "dna"
+        sample.material_identity for sample in compiled.protocol.samples if sample.role == "dna"
     } == {"custom-plasmid"}
     assert all(
         sample.contents[:3] == ("custom-strain", "Competent_Cell_custom-cells", "custom-plasmid")
@@ -143,23 +158,29 @@ def test_transformation_uses_caller_defined_materials():
     )
 
 
-def test_assembly_accepts_sbol_parts():
-    product = Part("https://vsv.bio/rvsv_dg_outbreak_gp/plasmid")
-    insert = Part("https://vsv.bio/rvsv_dg_outbreak_gp/GP")
+def test_assembly_accepts_unversioned_part_iris():
+    product = Part("https://example.org/design/product")
+    insert = Part("https://example.org/parts/reporter")
     assembly = Assembly(
-        id="rvsv_dg_outbreak_gp-assembly",
+        id="example-assembly",
         product=product,
-        backbone=Part("https://vsv.bio/backbone/pvsv-dg"),
+        backbone=Part("https://example.org/parts/backbone"),
         parts=[insert],
         restriction_enzyme=BSAI,
     )
     assert assembly.parts == (insert,)
-    compiled = ProtocolCompiler().compile(
-        AssemblyRequest(id="rvsv_dg_outbreak_gp", assemblies=(assembly,)),
-        hardware=Manual(),
+    compiled = lab.compile(
+        build_assembly(AssemblyRequest(id="example", assemblies=(assembly,))),
+        Manual(),
     )
-    assert compiled.manifest.plasmid_locations()[product.iri] == ["A1"]
-    assert any(sample.label == "Restriction Enzyme BsaI" for sample in compiled.plan.samples)
+    outputs = compiled.manifest
+    locations = {placement.sample_id: placement.location for placement in outputs.placements}
+    assert [
+        locations[sample.id]
+        for sample in outputs.samples
+        if sample.material_identity == product.iri
+    ] == [Location("products", "A1")]
+    assert any(sample.label == "Restriction Enzyme BsaI" for sample in compiled.protocol.samples)
 
 
 def test_part_iri_and_part_sequence_are_checked():
@@ -263,10 +284,10 @@ def test_ot2_lowering_uses_the_cloning_slots():
     assert plating.labware["sources"].load_name == "biorad_96_wellplate_200ul_pcr"
 
 
-def test_protocol_compiler_rejects_unsupported_star_preset_equipment():
+def test_compiler_rejects_unsupported_star_preset_equipment():
     with pytest.raises(lab.CompileError, match="No STAR preset.*Lab DeckLayout"):
-        ProtocolCompiler().compile(
-            AssemblyRequest(id="sbol-loop-assembly", assemblies=CLONING_ASSEMBLIES),
+        lab.compile(
+            build_assembly(AssemblyRequest(id="sbol-loop-assembly", assemblies=CLONING_ASSEMBLIES)),
             hardware=assembly_deck(),
             liquid_handler=LiquidHandler.STAR,
         )

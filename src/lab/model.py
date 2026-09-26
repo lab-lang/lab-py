@@ -5,6 +5,7 @@ from decimal import Decimal
 from enum import Enum
 from typing import Any
 
+from lab.samples import Location, OutputManifest, Sample, SamplePlacement
 from lab.units import number
 
 
@@ -12,15 +13,6 @@ from lab.units import number
 class Origin:
     file: str
     line: int
-
-
-@dataclass(frozen=True)
-class Location:
-    resource: str
-    well: str
-
-    def __str__(self) -> str:
-        return f"{self.resource}:{self.well}"
 
 
 @dataclass(frozen=True)
@@ -121,6 +113,20 @@ class RecordedProtocol:
     description: str
     resources: tuple[Resource, ...]
     steps: tuple[Step, ...]
+    samples: tuple[Sample, ...] = ()
+    placements: tuple[SamplePlacement, ...] = ()
+    input_sample_ids: tuple[str, ...] = ()
+    output_sample_ids: tuple[str, ...] = ()
+
+    def output_manifest(self) -> OutputManifest:
+        """Project declared outputs from this snapshot using logical locations."""
+        samples = {sample.id: sample for sample in self.samples}
+        placements = {placement.sample_id: placement for placement in self.placements}
+        return OutputManifest(
+            protocol_id=self.name,
+            samples=tuple(samples[sample_id] for sample_id in self.output_sample_ids),
+            placements=tuple(placements[sample_id] for sample_id in self.output_sample_ids),
+        )
 
 
 @dataclass(frozen=True)

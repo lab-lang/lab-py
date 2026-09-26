@@ -11,7 +11,6 @@ from lab.model import (
     Distribute,
     Fill,
     Hold,
-    Location,
     ManualInstruction,
     Mix,
     Origin,
@@ -23,6 +22,7 @@ from lab.model import (
     Transfer,
     Wait,
 )
+from lab.samples import Location, Sample, SamplePlacement
 from lab.units import magnitude, temperature
 
 
@@ -83,6 +83,10 @@ class Protocol:
         self._owner = object()
         self._resources: dict[str, Resource] = {}
         self._steps: list[Step] = []
+        self._samples: dict[str, Sample] = {}
+        self._placements: list[SamplePlacement] = []
+        self._input_sample_ids: list[str] = []
+        self._output_sample_ids: list[str] = []
 
     @property
     def steps(self) -> tuple[Step, ...]:
@@ -159,6 +163,33 @@ class Protocol:
             raise ValueError(f"Initial volume exceeds the capacity of {location}")
         fill = Fill(location.well, _text(material, "Material"), amount)
         self._resources[location.resource] = replace(resource, fills=(*resource.fills, fill))
+
+    def add_sample(
+        self,
+        sample: Sample,
+        *,
+        at: Well,
+        is_input: bool = False,
+        is_output: bool = False,
+    ) -> None:
+        """Declare identity and lineage at a logical well; volumes belong to loads and steps.
+
+        Parents reference samples in this protocol. Imported samples retain their
+        upstream identity through ``source_protocol_id`` and ``source_sample_id``.
+        """
+        if not isinstance(sample, Sample):
+            raise TypeError("Pass a Sample.")
+        location = self._location(at)
+        if sample.id in self._samples:
+            raise ValueError(f"Sample {sample.id!r} already exists.")
+        if any(placement.location == location for placement in self._placements):
+            raise ValueError(f"A sample is already declared at {location}.")
+        self._samples[sample.id] = sample
+        self._placements.append(SamplePlacement(sample_id=sample.id, location=location))
+        if is_input:
+            self._input_sample_ids.append(sample.id)
+        if is_output:
+            self._output_sample_ids.append(sample.id)
 
     def transfer(self, source: Well, destination: Well, *, volume: Any) -> None:
         start, end = self._location(source), self._location(destination)
@@ -241,5 +272,12 @@ class Protocol:
 
     def snapshot(self) -> RecordedProtocol:
         return RecordedProtocol(
-            self.name, self.description, tuple(self._resources.values()), tuple(self._steps)
+            self.name,
+            self.description,
+            tuple(self._resources.values()),
+            tuple(self._steps),
+            tuple(self._samples.values()),
+            tuple(self._placements),
+            tuple(self._input_sample_ids),
+            tuple(self._output_sample_ids),
         )

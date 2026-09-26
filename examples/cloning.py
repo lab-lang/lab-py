@@ -3,21 +3,22 @@
 import argparse
 from pathlib import Path
 
+from lab import compile
 from lab.experiments.cloning import (
-    assembly_deck,
-    plating_deck,
-    transformation_deck,
-)
-from lab.protocols import (
     BSAI,
     Assembly,
     AssemblyRequest,
-    Part,
     PlatingRequest,
-    ProtocolCompiler,
     Transformation,
     TransformationRequest,
+    assembly_deck,
+    build_assembly,
+    build_plating,
+    build_transformation,
+    plating_deck,
+    transformation_deck,
 )
+from lab.part import Part
 from lab.targets import LiquidHandler, Manual
 
 PSB1C3 = Part("https://sbolcanvas.org/pSB1C3/1")
@@ -92,25 +93,28 @@ def main() -> None:
     parser.add_argument("--out", default=None)
     args = parser.parse_args()
     liquid_handler = None if args.target == "manual" else LiquidHandler(args.target)
-    compiler = ProtocolCompiler()
-    assembled = compiler.compile(
-        AssemblyRequest(id="sbol-loop-assembly", assemblies=ASSEMBLIES),
+    assembled = compile(
+        build_assembly(AssemblyRequest(id="sbol-loop-assembly", assemblies=ASSEMBLIES)),
         hardware=Manual() if liquid_handler is None else assembly_deck(),
         liquid_handler=liquid_handler,
     )
-    transformed = compiler.compile(
-        TransformationRequest(id="heat-shock", transformations=STRAINS),
-        inputs=assembled.manifest,
+    transformed = compile(
+        build_transformation(
+            TransformationRequest(id="heat-shock", transformations=STRAINS),
+            inputs=assembled.manifest,
+        ),
         hardware=Manual() if liquid_handler is None else transformation_deck(),
         liquid_handler=liquid_handler,
     )
-    plated = compiler.compile(
-        PlatingRequest(
-            id="plating",
-            sample_ids=tuple(sample.id for sample in transformed.manifest.samples),
-            source_stage_id=transformed.manifest.protocol_id,
+    plated = compile(
+        build_plating(
+            PlatingRequest(
+                id="plating",
+                sample_ids=tuple(sample.id for sample in transformed.manifest.samples),
+                source_stage_id=transformed.manifest.protocol_id,
+            ),
+            inputs=transformed.manifest,
         ),
-        inputs=transformed.manifest,
         hardware=Manual() if liquid_handler is None else plating_deck(),
         liquid_handler=liquid_handler,
     )

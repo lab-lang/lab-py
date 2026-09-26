@@ -5,7 +5,6 @@ from decimal import Decimal
 from lab.model import (
     Binding,
     Distribute,
-    Location,
     Mix,
     RecordedProtocol,
     SetTemperature,
@@ -13,6 +12,7 @@ from lab.model import (
     Thermocycle,
     Transfer,
 )
+from lab.samples import Location
 from lab.units import number
 
 
@@ -25,7 +25,46 @@ def step_error(index: int, step: Step, message: str) -> CompileError:
 
 
 def validate(protocol: RecordedProtocol, bindings: tuple[Binding, ...]) -> dict[Location, Decimal]:
+    validate_samples(protocol)
     return volume_trace(protocol, bindings)[-1]
+
+
+def validate_samples(protocol: RecordedProtocol) -> None:
+    """Check declarations against the recorded resources, independently of any target."""
+    samples = {sample.id: sample for sample in protocol.samples}
+    if len(samples) != len(protocol.samples):
+        raise CompileError("Sample ids must be unique within a protocol.")
+    for label, ids in (
+        ("inputs", protocol.input_sample_ids),
+        ("outputs", protocol.output_sample_ids),
+    ):
+        if len(set(ids)) != len(ids) or not set(ids) <= samples.keys():
+            raise CompileError(f"Protocol {label} must reference unique declared samples.")
+    placed = {placement.sample_id for placement in protocol.placements}
+    if len(protocol.placements) != len(samples) or placed != samples.keys():
+        raise CompileError("Every sample needs exactly one placement.")
+    locations = {
+        Location(resource.name, well) for resource in protocol.resources for well in resource.wells
+    }
+    occupied: set[Location] = set()
+    for placement in protocol.placements:
+        location = placement.location
+        if location not in locations:
+            raise CompileError(f"Unknown sample location {location}.")
+        if location in occupied:
+            raise CompileError(f"Different samples cannot share {location}.")
+        occupied.add(location)
+    for sample in protocol.samples:
+        if not set(sample.parent_ids) <= samples.keys():
+            raise CompileError(f"Unknown parent for sample {sample.id}.")
+    pending = set(samples)
+    while pending:
+        ready = {
+            sample_id for sample_id in pending if not set(samples[sample_id].parent_ids) & pending
+        }
+        if not ready:
+            raise CompileError("Sample lineage must not contain cycles.")
+        pending -= ready
 
 
 def volume_trace(

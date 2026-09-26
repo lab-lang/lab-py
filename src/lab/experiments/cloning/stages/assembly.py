@@ -15,7 +15,9 @@ from fnmatch import fnmatch
 from itertools import product
 
 from lab.experiments.cloning.addresses import microliters, uri_name, well_at
+from lab.experiments.cloning.types import AssemblyRequest
 from lab.protocol import Plate, Protocol, Well
+from lab.samples import Sample
 from lab.units import celsius, minutes, uL
 
 WATER = "Deionized Water"
@@ -138,19 +140,52 @@ def record_assembly(
 
 
 def build_assembly(
-    assemblies: Sequence[Mapping[str, object]],
+    assemblies: AssemblyRequest | Sequence[Mapping[str, object]],
     *,
     name: str = "Loop assembly",
     **params: object,
-) -> tuple[Protocol, dict[str, tuple[Well, ...]]]:
+) -> Protocol:
     """A standalone assembly protocol whose plates are named ``reagents`` and ``products``."""
+    if isinstance(assemblies, AssemblyRequest):
+        name = assemblies.id
+        assemblies = [
+            {
+                "Product": assembly.product.iri,
+                "Backbone": assembly.backbone.iri,
+                "PartsList": [part.iri for part in assembly.parts],
+                "Restriction Enzyme": assembly.restriction_enzyme.iri,
+            }
+            for assembly in assemblies.assemblies
+        ]
     layout = layout_assembly(assemblies, **params)  # type: ignore[arg-type]
     protocol = Protocol(name, description="Golden Gate assembly on a thermocycler plate.")
     reagents = protocol.plate("reagents", shape=(4, 6), capacity=1500 * uL, dead_volume=0 * uL)
     products = protocol.plate("products", shape=(8, 12), capacity=100 * uL, dead_volume=0 * uL)
+    stock_ids: dict[str, str] = {}
     for index, material, volume in layout.stocks:
         protocol.load(well_at(reagents, index), material, volume=volume * uL)
-    return protocol, record_assembly(protocol, layout, reagents, products)
+        sample = Sample(
+            id=f"stock-{index}", material_identity=material, label=material, role="stock"
+        )
+        protocol.add_sample(sample, at=well_at(reagents, index), is_input=True)
+        stock_ids[material] = sample.id
+    for reaction in layout.reactions:
+        protocol.add_sample(
+            Sample(
+                id=f"product-{reaction.destination}",
+                material_identity=reaction.product_key,
+                label=uri_name(reaction.product_key),
+                parent_ids=tuple(
+                    dict.fromkeys(stock_ids[material] for material, _, _ in reaction.additions)
+                ),
+                role="product",
+                replicate=layout.products[reaction.product_key].index(reaction.destination) + 1,
+            ),
+            at=well_at(products, reaction.destination),
+            is_output=True,
+        )
+    record_assembly(protocol, layout, reagents, products)
+    return protocol
 
 
 def _kind(assembly: Mapping[str, object]) -> str:

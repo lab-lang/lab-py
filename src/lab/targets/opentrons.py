@@ -13,7 +13,6 @@ from lab.labware import LabwareKind
 from lab.model import (
     Binding,
     Distribute,
-    Location,
     ManualInstruction,
     Mix,
     RecordedProtocol,
@@ -23,6 +22,7 @@ from lab.model import (
     Transfer,
     Wait,
 )
+from lab.samples import Location
 from lab.targets.liquid_handler import LiquidHandler
 from lab.units import number
 from lab.validation import CompileError, step_error, volume_trace

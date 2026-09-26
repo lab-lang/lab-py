@@ -13,9 +13,10 @@ from lab.targets import Manual
 
 
 def main() -> None:
-    # Verify public subpackages are present in the installed distribution.
+    # Verify public modules and subpackages are present in the installed distribution.
     import_module("lab.experiments.cloning")
-    import_module("lab.protocols")
+    import_module("lab.part")
+    import_module("lab.samples")
 
     package = distribution("lab-compiler")
     assert package.version == lab.__version__

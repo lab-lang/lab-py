@@ -14,6 +14,7 @@ from lab import CompileError, Protocol, celsius, seconds, uL
 from lab.deck import Container, Deck, DeckSite, HolderSite, Module, Slot
 from lab.equipment import LabwareModel, ModuleModel
 from lab.labware import COLD_BLOCK_24, PCR_PLATE_96, PLATE_96, LabwareKind, LabwareSpec
+from lab.samples import Location
 from lab.targets import Labware, LiquidHandler, Manual
 from lab.targets.lower import lower_deck
 from tests.target_fixture import target, water_aliquots
@@ -69,7 +70,7 @@ def test_generated_opentrons_runs_in_official_simulator(name):
     assert any(text.startswith("Mixing 3 times with a volume of 20.0") for text in texts)
     data = json.loads(bundle.plan_json)
     assert data["source_sha256"] == hashlib.sha256(bundle.files["protocol.py"].encode()).hexdigest()
-    assert dict(bundle.final_volumes)[lab.model.Location("water", "A1")] == Decimal(100)
+    assert dict(bundle.final_volumes)[Location("water", "A1")] == Decimal(100)
     assert any("A1" in text and "plate" in text.lower() for text in texts)
 
 
@@ -224,11 +225,11 @@ async def test_star_example_preserves_supplied_carriers_sites_and_well_bindings(
     assert placements(saved_deck) == expected_placements
     bindings = {binding.location: binding.physical for binding in bundle.target.bindings}
     for column in range(1, 13):
-        assert bindings[lab.model.Location("sources", f"A{column}")] == (
+        assert bindings[Location("sources", f"A{column}")] == (
             hardware.labware["sources"].get_item(f"B{column}").name
         )
-    assert bindings[lab.model.Location("assay", "A2")] == assay.get_item("A2").name
-    assert bindings[lab.model.Location("working_reagent", "A1")] == (
+    assert bindings[Location("assay", "A2")] == assay.get_item("A2").name
+    assert bindings[Location("working_reagent", "A1")] == (
         hardware.labware["working_reagent"].get_item("A1").name
     )
 
@@ -282,10 +283,10 @@ def test_same_lab_deck_compiles_for_opentrons(handler):
     assert all("A1 of NEST 12 Well Reservoir 15 mL" in text for text in aspirations[24:])
     volumes = dict(bundle.final_volumes)
     for column in range(1, 13):
-        assert volumes[lab.model.Location("sources", f"A{column}")] == 50
+        assert volumes[Location("sources", f"A{column}")] == 50
         for row in ("A", "B"):
-            assert volumes[lab.model.Location("assay", f"{row}{column}")] == 225
-    assert volumes[lab.model.Location("working_reagent", "A1")] == 1200
+            assert volumes[Location("assay", f"{row}{column}")] == 225
+    assert volumes[Location("working_reagent", "A1")] == 1200
     assert any("Pausing" in event["payload"]["text"] for event in log)
     configuration = json.loads(bundle.target.configuration_json)
     assert len(configuration["lab_deck"]["layouts"]) == 3
@@ -311,7 +312,7 @@ def test_ambient_plate_preset_remains_portable(handler):
         )
     )
     bundle = lab.compile(water_aliquots(), deck, liquid_handler=handler)
-    assert dict(bundle.final_volumes)[lab.model.Location("water", "A1")] == 100
+    assert dict(bundle.final_volumes)[Location("water", "A1")] == 100
 
 
 @pytest.mark.integration
