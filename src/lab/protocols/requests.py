@@ -40,7 +40,7 @@ def _parts(values: object, *, name: str) -> tuple[Part, ...]:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class AssemblyReaction:
+class Assembly:
     id: str
     product: Part
     backbone: Part
@@ -49,7 +49,7 @@ class AssemblyReaction:
 
     def __post_init__(self) -> None:
         if not self.id:
-            raise ValueError("An assembly reaction requires an id.")
+            raise ValueError("An assembly requires an id.")
         _part(self.product, name="Product")
         _part(self.backbone, name="Backbone")
         _part(self.restriction_enzyme, name="Restriction enzyme")
@@ -59,20 +59,20 @@ class AssemblyReaction:
 @dataclass(frozen=True, slots=True, kw_only=True)
 class AssemblyRequest:
     id: str
-    reactions: tuple[AssemblyReaction, ...]
+    assemblies: tuple[Assembly, ...]
     source_stage_id: str | None = None
 
     def __post_init__(self) -> None:
-        if not self.id or not self.reactions:
-            raise ValueError("An assembly request requires an id and reactions.")
-        if not isinstance(self.reactions, tuple):
-            raise TypeError("AssemblyRequest.reactions must be a tuple.")
-        if len({reaction.id for reaction in self.reactions}) != len(self.reactions):
-            raise ValueError("Reaction ids must be unique within a request.")
+        if not self.id or not self.assemblies:
+            raise ValueError("An assembly request requires an id and assemblies.")
+        if not isinstance(self.assemblies, tuple):
+            raise TypeError("AssemblyRequest.assemblies must be a tuple.")
+        if len({assembly.id for assembly in self.assemblies}) != len(self.assemblies):
+            raise ValueError("Assembly ids must be unique within a request.")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class TransformationReaction:
+class Transformation:
     id: str
     strain: Part
     chassis: Part
@@ -89,16 +89,18 @@ class TransformationReaction:
 @dataclass(frozen=True, slots=True, kw_only=True)
 class TransformationRequest:
     id: str
-    reactions: tuple[TransformationReaction, ...]
+    transformations: tuple[Transformation, ...]
     source_stage_id: str | None = None
 
     def __post_init__(self) -> None:
-        if not self.id or not isinstance(self.reactions, tuple) or not self.reactions:
+        if not self.id or not isinstance(self.transformations, tuple) or not self.transformations:
             raise ValueError(
-                "A transformation request requires an id and a nonempty reaction tuple."
+                "A transformation request requires an id and a nonempty transformation tuple."
             )
-        if len({reaction.id for reaction in self.reactions}) != len(self.reactions):
-            raise ValueError("Reaction ids must be unique within a request.")
+        if len({transformation.id for transformation in self.transformations}) != len(
+            self.transformations
+        ):
+            raise ValueError("Transformation ids must be unique within a request.")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

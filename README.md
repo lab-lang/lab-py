@@ -39,16 +39,16 @@ from lab.experiments.cloning import transformation_deck
 from lab.protocols import (
     Part,
     ProtocolCompiler,
-    TransformationReaction,
+    Transformation,
     TransformationRequest,
 )
 from lab.targets import LiquidHandler
 
 request = TransformationRequest(
     id="my-transformation",
-    reactions=(
-        TransformationReaction(
-            id="reaction-1",
+    transformations=(
+        Transformation(
+            id="transformation-1",
             strain=Part("https://example.org/my-strain/1"),
             chassis=Part("https://example.org/my-cells/1"),
             plasmids=[Part("https://example.org/my-plasmid/1")],
@@ -63,7 +63,7 @@ compiled = ProtocolCompiler().compile(
 compiled.write("build/transformation")
 ```
 
-`TransformationReaction` names an output strain, its chassis, and its plasmids as `Part` IRIs. The compiler assigns wells and records the transfers, heat shock, and recovery steps. The result includes an output manifest for downstream stages. The [cloning example](https://github.com/the-lab-compiler/lab-py/blob/master/examples/cloning.py) defines its materials and reactions directly and links assembly, transformation, and plating.
+`Transformation` names an output strain, its chassis, and its plasmids as `Part` IRIs. The compiler assigns wells and records the transfers, heat shock, and recovery steps. The result includes an output manifest for downstream stages. The [cloning example](https://github.com/the-lab-compiler/lab-py/blob/master/examples/cloning.py) defines its materials, assemblies, and transformations directly and links assembly, transformation, and plating.
 
 `transformation_deck(on_module=True)` names the 24-well DNA block, the cell tubes, and the reaction plate. This is an Opentrons preset; the example uses `LiquidHandler.OT2`. For a document with no robot, import `Manual` from `lab.targets` and use `ProtocolCompiler().compile(request, hardware=Manual())`.
 

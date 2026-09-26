@@ -11,16 +11,16 @@ from lab.protocols.plans import ProtocolPlan
 from lab.protocols.program import Call, Program
 from lab.protocols.requests import (
     BSAI,
-    AssemblyReaction,
+    Assembly,
     AssemblyRequest,
     Part,
     PlatingRequest,
-    TransformationReaction,
+    Transformation,
     TransformationRequest,
 )
 
 __all__ = [
-    "AssemblyReaction",
+    "Assembly",
     "AssemblyRequest",
     "BSAI",
     "Call",
@@ -31,6 +31,6 @@ __all__ = [
     "PlatingRequest",
     "ProtocolCompiler",
     "ProtocolPlan",
-    "TransformationReaction",
+    "Transformation",
     "TransformationRequest",
 ]

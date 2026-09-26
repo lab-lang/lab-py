@@ -10,12 +10,12 @@ from lab.experiments.cloning import (
 )
 from lab.protocols import (
     BSAI,
-    AssemblyReaction,
+    Assembly,
     AssemblyRequest,
     Part,
     PlatingRequest,
     ProtocolCompiler,
-    TransformationReaction,
+    Transformation,
     TransformationRequest,
 )
 from lab.targets import LiquidHandler, Manual
@@ -37,14 +37,14 @@ STRAIN_3 = Part("https://SBOL2Build.org/composite_strain_3/1")
 STRAIN_4 = Part("https://SBOL2Build.org/composite_strain_4/1")
 
 ASSEMBLIES = (
-    AssemblyReaction(
+    Assembly(
         id="assembly-1",
         product=PLASMID_1,
         backbone=PSB1C3,
         parts=[J23101, B0034, GFP, B0015],
         restriction_enzyme=BSAI,
     ),
-    AssemblyReaction(
+    Assembly(
         id="assembly-2",
         product=PLASMID_2,
         backbone=PSB1C3,
@@ -54,25 +54,25 @@ ASSEMBLIES = (
 )
 
 STRAINS = (
-    TransformationReaction(
+    Transformation(
         id="transformation-1",
         strain=STRAIN_1,
         chassis=DH5ALPHA,
         plasmids=[PLASMID_1],
     ),
-    TransformationReaction(
+    Transformation(
         id="transformation-2",
         strain=STRAIN_2,
         chassis=DH5ALPHA,
         plasmids=[PLASMID_2],
     ),
-    TransformationReaction(
+    Transformation(
         id="transformation-3",
         strain=STRAIN_3,
         chassis=BL21,
         plasmids=[PLASMID_1],
     ),
-    TransformationReaction(
+    Transformation(
         id="transformation-4",
         strain=STRAIN_4,
         chassis=BL21,
@@ -94,12 +94,12 @@ def main() -> None:
     liquid_handler = None if args.target == "manual" else LiquidHandler(args.target)
     compiler = ProtocolCompiler()
     assembled = compiler.compile(
-        AssemblyRequest(id="sbol-loop-assembly", reactions=ASSEMBLIES),
+        AssemblyRequest(id="sbol-loop-assembly", assemblies=ASSEMBLIES),
         hardware=Manual() if liquid_handler is None else assembly_deck(),
         liquid_handler=liquid_handler,
     )
     transformed = compiler.compile(
-        TransformationRequest(id="heat-shock", reactions=STRAINS),
+        TransformationRequest(id="heat-shock", transformations=STRAINS),
         inputs=assembled.manifest,
         hardware=Manual() if liquid_handler is None else transformation_deck(),
         liquid_handler=liquid_handler,

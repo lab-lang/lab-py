@@ -5,8 +5,8 @@ from decimal import Decimal
 import pytest
 
 import lab
-from examples.cloning import ASSEMBLIES as ASSEMBLY_REACTIONS
-from examples.cloning import STRAINS as TRANSFORMATION_REACTIONS
+from examples.cloning import ASSEMBLIES as CLONING_ASSEMBLIES
+from examples.cloning import STRAINS as CLONING_STRAINS
 from lab.experiments.cloning import (
     assembly_deck,
     golden_gate,
@@ -19,12 +19,12 @@ from lab.experiments.cloning import (
 from lab.experiments.cloning.addresses import well_name
 from lab.protocols import (
     BSAI,
-    AssemblyReaction,
+    Assembly,
     AssemblyRequest,
     Part,
     PlatingRequest,
     ProtocolCompiler,
-    TransformationReaction,
+    Transformation,
     TransformationRequest,
 )
 from lab.targets import Labware, LiquidHandler, Manual
@@ -90,14 +90,14 @@ def test_plating_stays_on_one_plate_until_a_half_is_full():
 def test_compiler_links_stages_with_a_manifest_not_a_deck_tuple():
     compiler = ProtocolCompiler()
     assembled = compiler.compile(
-        AssemblyRequest(id="sbol-loop-assembly", reactions=ASSEMBLY_REACTIONS), hardware=Manual()
+        AssemblyRequest(id="sbol-loop-assembly", assemblies=CLONING_ASSEMBLIES), hardware=Manual()
     )
     assert assembled.manifest.plasmid_locations()[
         "https://SBOL2Build.org/composite_plasmid_1/1"
     ] == ["A1"]
     assert any(call.method == "aspirate" for call in assembled.program.instructions)
     transformed = compiler.compile(
-        TransformationRequest(id="heat-shock", reactions=TRANSFORMATION_REACTIONS),
+        TransformationRequest(id="heat-shock", transformations=CLONING_STRAINS),
         inputs=assembled.manifest,
         hardware=Manual(),
     )
@@ -113,7 +113,7 @@ def test_compiler_links_stages_with_a_manifest_not_a_deck_tuple():
     assert plated.manifest.samples
     assert {call.method for call in plated.program.instructions} >= {"aspirate", "mix"}
     manual = compiler.compile(
-        AssemblyRequest(id="sbol-loop-assembly", reactions=ASSEMBLY_REACTIONS), hardware=Manual()
+        AssemblyRequest(id="sbol-loop-assembly", assemblies=CLONING_ASSEMBLIES), hardware=Manual()
     )
     assert "protocol.html" in manual.files
     assert "protocol.py" not in manual.files
@@ -122,9 +122,9 @@ def test_compiler_links_stages_with_a_manifest_not_a_deck_tuple():
 def test_transformation_uses_caller_defined_materials():
     request = TransformationRequest(
         id="custom-transformation",
-        reactions=(
-            TransformationReaction(
-                id="custom-reaction",
+        transformations=(
+            Transformation(
+                id="custom-transformation",
                 strain=Part("https://example.org/custom-strain/1"),
                 chassis=Part("https://example.org/custom-cells/1"),
                 plasmids=[Part("https://example.org/custom-plasmid/1")],
@@ -146,16 +146,16 @@ def test_transformation_uses_caller_defined_materials():
 def test_assembly_accepts_sbol_parts():
     product = Part("https://vsv.bio/rvsv_dg_outbreak_gp/plasmid")
     insert = Part("https://vsv.bio/rvsv_dg_outbreak_gp/GP")
-    reaction = AssemblyReaction(
+    assembly = Assembly(
         id="rvsv_dg_outbreak_gp-assembly",
         product=product,
         backbone=Part("https://vsv.bio/backbone/pvsv-dg"),
         parts=[insert],
         restriction_enzyme=BSAI,
     )
-    assert reaction.parts == (insert,)
+    assert assembly.parts == (insert,)
     compiled = ProtocolCompiler().compile(
-        AssemblyRequest(id="rvsv_dg_outbreak_gp", reactions=(reaction,)),
+        AssemblyRequest(id="rvsv_dg_outbreak_gp", assemblies=(assembly,)),
         hardware=Manual(),
     )
     assert compiled.manifest.plasmid_locations()[product.iri] == ["A1"]
@@ -170,7 +170,7 @@ def test_part_iri_and_part_sequence_are_checked():
         Part("ATGCTAA")
     plasmid = Part("https://SBOL2Build.org/composite_plasmid_1/1")
     with pytest.raises(TypeError, match="Parts"):
-        AssemblyReaction(
+        Assembly(
             id="assembly",
             product=plasmid,
             backbone=plasmid,
@@ -179,7 +179,7 @@ def test_part_iri_and_part_sequence_are_checked():
         )
     strain = Part("https://example.org/custom-strain/1")
     with pytest.raises(TypeError, match="Plasmids"):
-        TransformationReaction(
+        Transformation(
             id="transformation",
             strain=strain,
             chassis=strain,
@@ -266,7 +266,7 @@ def test_ot2_lowering_uses_the_cloning_slots():
 def test_protocol_compiler_rejects_unsupported_star_preset_equipment():
     with pytest.raises(lab.CompileError, match="No STAR preset.*Lab DeckLayout"):
         ProtocolCompiler().compile(
-            AssemblyRequest(id="sbol-loop-assembly", reactions=ASSEMBLY_REACTIONS),
+            AssemblyRequest(id="sbol-loop-assembly", assemblies=CLONING_ASSEMBLIES),
             hardware=assembly_deck(),
             liquid_handler=LiquidHandler.STAR,
         )
